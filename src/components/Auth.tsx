@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { Eye, EyeOff, LogIn, UserPlus } from "lucide-react";
+import { Eye, EyeOff, LogIn, UserPlus, Loader2, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Checkbox } from "./ui/checkbox";
+import { apiService } from "../services/api";
+import { toast } from "sonner";
 
 interface AuthProps {
   onLogin: (user: { email: string; name: string }) => void;
@@ -14,9 +16,10 @@ interface AuthProps {
 export function Auth({ onLogin }: AuthProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   
   const [loginForm, setLoginForm] = useState({
-    email: "",
+    login: "",
     password: "",
     rememberMe: false
   });
@@ -24,7 +27,7 @@ export function Auth({ onLogin }: AuthProps) {
   const [registerForm, setRegisterForm] = useState({
     firstName: "",
     lastName: "",
-    email: "",
+    login: "",
     password: "",
     confirmPassword: "",
     agreeToTerms: false
@@ -32,43 +35,86 @@ export function Auth({ onLogin }: AuthProps) {
 
   const [errors, setErrors] = useState<{[key: string]: string}>({});
 
-  const validateEmail = (email: string) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+  const validateLogin = (login: string) => {
+    return login.length >= 3;
   };
 
   const validatePassword = (password: string) => {
     return password.length >= 6;
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Сбрасываем предыдущие ошибки
+    setErrors({});
+    
     const newErrors: {[key: string]: string} = {};
 
-    if (!loginForm.email) {
-      newErrors.email = "Введите email";
-    } else if (!validateEmail(loginForm.email)) {
-      newErrors.email = "Некорректный email";
+    if (!loginForm.login) {
+      newErrors.login = "Введите логин";
+    } else if (!validateLogin(loginForm.login)) {
+      newErrors.login = "Логин должен содержать минимум 3 символа";
     }
 
     if (!loginForm.password) {
       newErrors.password = "Введите пароль";
     }
 
-    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
 
-    if (Object.keys(newErrors).length === 0) {
-      // Симуляция успешного входа
-      const user = {
-        email: loginForm.email,
-        name: loginForm.email.split('@')[0]
-      };
-      onLogin(user);
+    setIsLoading(true);
+    
+    try {
+      const response = await apiService.login({
+        login: loginForm.login,
+        password: loginForm.password
+      });
+
+      if (response.success) {
+        const user = {
+          email: response.data.user.login,
+          name: response.data.user.fullName || response.data.user.firstName
+        };
+        
+        toast.success("Вход выполнен успешно!");
+        onLogin(user);
+      }
+    } catch (error: any) {
+      console.error('Login error:', error);
+      
+      let errorMessage = "Ошибка при входе";
+      
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      // Устанавливаем ошибку в состояние (она останется на экране)
+      setErrors({ 
+        submit: errorMessage 
+      });
+      
+      // Также показываем toast для наглядности
+      toast.error(errorMessage, { 
+        duration: 5000,
+        description: "Проверьте правильность введенных данных"
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Сбрасываем предыдущие ошибки
+    setErrors({});
+    
     const newErrors: {[key: string]: string} = {};
 
     if (!registerForm.firstName) {
@@ -79,10 +125,10 @@ export function Auth({ onLogin }: AuthProps) {
       newErrors.lastName = "Введите фамилию";
     }
 
-    if (!registerForm.email) {
-      newErrors.email = "Введите email";
-    } else if (!validateEmail(registerForm.email)) {
-      newErrors.email = "Некорректный email";
+    if (!registerForm.login) {
+      newErrors.login = "Введите логин";
+    } else if (!validateLogin(registerForm.login)) {
+      newErrors.login = "Логин должен содержать минимум 3 символа";
     }
 
     if (!registerForm.password) {
@@ -101,15 +147,52 @@ export function Auth({ onLogin }: AuthProps) {
       newErrors.agreeToTerms = "Необходимо согласие с условиями";
     }
 
-    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
 
-    if (Object.keys(newErrors).length === 0) {
-      // Симуляция успешной регистрации
-      const user = {
-        email: registerForm.email,
-        name: `${registerForm.firstName} ${registerForm.lastName}`
-      };
-      onLogin(user);
+    setIsLoading(true);
+    
+    try {
+      const response = await apiService.register({
+        firstName: registerForm.firstName,
+        lastName: registerForm.lastName,
+        login: registerForm.login,
+        password: registerForm.password
+      });
+
+      if (response.success) {
+        const user = {
+          email: response.data.user.login,
+          name: response.data.user.fullName || `${response.data.user.firstName} ${response.data.user.lastName}`
+        };
+        
+        toast.success("Регистрация прошла успешно!");
+        onLogin(user);
+      }
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      
+      let errorMessage = "Ошибка при регистрации";
+      
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      // Устанавливаем ошибку в состояние
+      setErrors({ 
+        submit: errorMessage 
+      });
+      
+      toast.error(errorMessage, { 
+        duration: 5000,
+        description: "Попробуйте использовать другой логин или проверьте данные"
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -130,16 +213,32 @@ export function Auth({ onLogin }: AuthProps) {
             <TabsContent value="login" className="space-y-4">
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <Label htmlFor="login-email">Email</Label>
+                  <Label htmlFor="login-login">Логин</Label>
                   <Input
-                    id="login-email"
-                    type="email"
-                    value={loginForm.email}
-                    onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
-                    placeholder="your@email.com"
-                    className={errors.email ? "border-red-500" : ""}
+                    id="login-login"
+                    type="text"
+                    value={loginForm.login}
+                    onChange={(e) => {
+                      setLoginForm({...loginForm, login: e.target.value});
+                      // Очищаем ошибку при вводе
+                      if (errors.login) {
+                        setErrors(prev => {
+                          const newErrors = {...prev};
+                          delete newErrors.login;
+                          return newErrors;
+                        });
+                      }
+                    }}
+                    placeholder="Введите логин"
+                    className={errors.login ? "border-red-500" : ""}
+                    disabled={isLoading}
                   />
-                  {errors.email && <p className="text-sm text-red-500 mt-1">{errors.email}</p>}
+                  {errors.login && (
+                    <p className="text-sm text-red-500 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      {errors.login}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -149,9 +248,20 @@ export function Auth({ onLogin }: AuthProps) {
                       id="login-password"
                       type={showPassword ? "text" : "password"}
                       value={loginForm.password}
-                      onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                      onChange={(e) => {
+                        setLoginForm({...loginForm, password: e.target.value});
+                        // Очищаем ошибку при вводе
+                        if (errors.password) {
+                          setErrors(prev => {
+                            const newErrors = {...prev};
+                            delete newErrors.password;
+                            return newErrors;
+                          });
+                        }
+                      }}
                       placeholder="Введите пароль"
                       className={errors.password ? "border-red-500" : ""}
+                      disabled={isLoading}
                     />
                     <Button
                       type="button"
@@ -159,32 +269,47 @@ export function Auth({ onLogin }: AuthProps) {
                       size="sm"
                       className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                       onClick={() => setShowPassword(!showPassword)}
+                      disabled={isLoading}
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
-                  {errors.password && <p className="text-sm text-red-500 mt-1">{errors.password}</p>}
+                  {errors.password && (
+                    <p className="text-sm text-red-500 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      {errors.password}
+                    </p>
+                  )}
                 </div>
+                {errors.submit && (
+                  <div className="p-3 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                          Ошибка входа
+                        </p>
+                        <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                          {errors.submit}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="remember"
-                    checked={loginForm.rememberMe}
-                    onCheckedChange={(checked) => setLoginForm({...loginForm, rememberMe: checked as boolean})}
-                  />
-                  <Label htmlFor="remember" className="text-sm">Запомнить меня</Label>
-                </div>
-
-                <Button type="submit" className="w-full">
-                  <LogIn className="w-4 h-4 mr-2" />
-                  Войти
-                </Button>
-
-                <div className="text-center">
-                  <Button variant="link" className="text-sm">
-                    Забыли пароль?
-                  </Button>
-                </div>
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Вход...
+                    </>
+                  ) : (
+                    <>
+                      <LogIn className="w-4 h-4 mr-2" />
+                      Войти
+                    </>
+                  )}
+                </Button>          
               </form>
             </TabsContent>
 
@@ -196,36 +321,81 @@ export function Auth({ onLogin }: AuthProps) {
                     <Input
                       id="firstName"
                       value={registerForm.firstName}
-                      onChange={(e) => setRegisterForm({...registerForm, firstName: e.target.value})}
+                      onChange={(e) => {
+                        setRegisterForm({...registerForm, firstName: e.target.value});
+                        if (errors.firstName) {
+                          setErrors(prev => {
+                            const newErrors = {...prev};
+                            delete newErrors.firstName;
+                            return newErrors;
+                          });
+                        }
+                      }}
                       placeholder="Иван"
                       className={errors.firstName ? "border-red-500" : ""}
+                      disabled={isLoading}
                     />
-                    {errors.firstName && <p className="text-sm text-red-500 mt-1">{errors.firstName}</p>}
+                    {errors.firstName && (
+                      <p className="text-sm text-red-500 mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        {errors.firstName}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="lastName">Фамилия</Label>
                     <Input
                       id="lastName"
                       value={registerForm.lastName}
-                      onChange={(e) => setRegisterForm({...registerForm, lastName: e.target.value})}
+                      onChange={(e) => {
+                        setRegisterForm({...registerForm, lastName: e.target.value});
+                        if (errors.lastName) {
+                          setErrors(prev => {
+                            const newErrors = {...prev};
+                            delete newErrors.lastName;
+                            return newErrors;
+                          });
+                        }
+                      }}
                       placeholder="Петров"
                       className={errors.lastName ? "border-red-500" : ""}
+                      disabled={isLoading}
                     />
-                    {errors.lastName && <p className="text-sm text-red-500 mt-1">{errors.lastName}</p>}
+                    {errors.lastName && (
+                      <p className="text-sm text-red-500 mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        {errors.lastName}
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 <div>
-                  <Label htmlFor="register-email">Email</Label>
+                  <Label htmlFor="register-login">Логин</Label>
                   <Input
-                    id="register-email"
-                    type="email"
-                    value={registerForm.email}
-                    onChange={(e) => setRegisterForm({...registerForm, email: e.target.value})}
-                    placeholder="your@email.com"
-                    className={errors.email ? "border-red-500" : ""}
+                    id="register-login"
+                    type="text"
+                    value={registerForm.login}
+                    onChange={(e) => {
+                      setRegisterForm({...registerForm, login: e.target.value});
+                      if (errors.login) {
+                        setErrors(prev => {
+                          const newErrors = {...prev};
+                          delete newErrors.login;
+                          return newErrors;
+                        });
+                      }
+                    }}
+                    placeholder="Введите логин"
+                    className={errors.login ? "border-red-500" : ""}
+                    disabled={isLoading}
                   />
-                  {errors.email && <p className="text-sm text-red-500 mt-1">{errors.email}</p>}
+                  {errors.login && (
+                    <p className="text-sm text-red-500 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      {errors.login}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -235,9 +405,19 @@ export function Auth({ onLogin }: AuthProps) {
                       id="register-password"
                       type={showPassword ? "text" : "password"}
                       value={registerForm.password}
-                      onChange={(e) => setRegisterForm({...registerForm, password: e.target.value})}
+                      onChange={(e) => {
+                        setRegisterForm({...registerForm, password: e.target.value});
+                        if (errors.password) {
+                          setErrors(prev => {
+                            const newErrors = {...prev};
+                            delete newErrors.password;
+                            return newErrors;
+                          });
+                        }
+                      }}
                       placeholder="Минимум 6 символов"
                       className={errors.password ? "border-red-500" : ""}
+                      disabled={isLoading}
                     />
                     <Button
                       type="button"
@@ -245,11 +425,17 @@ export function Auth({ onLogin }: AuthProps) {
                       size="sm"
                       className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                       onClick={() => setShowPassword(!showPassword)}
+                      disabled={isLoading}
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
-                  {errors.password && <p className="text-sm text-red-500 mt-1">{errors.password}</p>}
+                  {errors.password && (
+                    <p className="text-sm text-red-500 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      {errors.password}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -259,9 +445,19 @@ export function Auth({ onLogin }: AuthProps) {
                       id="confirm-password"
                       type={showConfirmPassword ? "text" : "password"}
                       value={registerForm.confirmPassword}
-                      onChange={(e) => setRegisterForm({...registerForm, confirmPassword: e.target.value})}
+                      onChange={(e) => {
+                        setRegisterForm({...registerForm, confirmPassword: e.target.value});
+                        if (errors.confirmPassword) {
+                          setErrors(prev => {
+                            const newErrors = {...prev};
+                            delete newErrors.confirmPassword;
+                            return newErrors;
+                          });
+                        }
+                      }}
                       placeholder="Повторите пароль"
                       className={errors.confirmPassword ? "border-red-500" : ""}
+                      disabled={isLoading}
                     />
                     <Button
                       type="button"
@@ -269,31 +465,77 @@ export function Auth({ onLogin }: AuthProps) {
                       size="sm"
                       className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      disabled={isLoading}
                     >
                       {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
-                  {errors.confirmPassword && <p className="text-sm text-red-500 mt-1">{errors.confirmPassword}</p>}
+                  {errors.confirmPassword && (
+                    <p className="text-sm text-red-500 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      {errors.confirmPassword}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="terms"
                     checked={registerForm.agreeToTerms}
-                    onCheckedChange={(checked) => setRegisterForm({...registerForm, agreeToTerms: checked as boolean})}
+                    onCheckedChange={(checked) => {
+                      setRegisterForm({...registerForm, agreeToTerms: checked as boolean});
+                      if (errors.agreeToTerms) {
+                        setErrors(prev => {
+                          const newErrors = {...prev};
+                          delete newErrors.agreeToTerms;
+                          return newErrors;
+                        });
+                      }
+                    }}
+                    disabled={isLoading}
                   />
                   <Label htmlFor="terms" className="text-sm">
                     Я согласен с{" "}
-                    <Button variant="link" className="p-0 h-auto text-sm">
+                    <Button variant="link" className="p-0 h-auto text-sm" disabled={isLoading}>
                       условиями использования
                     </Button>
                   </Label>
                 </div>
-                {errors.agreeToTerms && <p className="text-sm text-red-500">{errors.agreeToTerms}</p>}
+                {errors.agreeToTerms && (
+                  <p className="text-sm text-red-500 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    {errors.agreeToTerms}
+                  </p>
+                )}
 
-                <Button type="submit" className="w-full">
-                  <UserPlus className="w-4 h-4 mr-2" />
-                  Создать аккаунт
+                {errors.submit && (
+                  <div className="p-3 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                          Ошибка регистрации
+                        </p>
+                        <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                          {errors.submit}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Регистрация...
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="w-4 h-4 mr-2" />
+                      Создать аккаунт
+                    </>
+                  )}
                 </Button>
               </form>
             </TabsContent>

@@ -16,13 +16,15 @@ const userSchema = new mongoose.Schema({
     trim: true,
     maxlength: [50, 'Фамилия не может быть длиннее 50 символов']
   },
-  email: {
+  login: {
     type: String,
-    required: [true, 'Email обязателен'],
+    required: [true, 'Логин обязателен'],
     unique: true,
     lowercase: true,
     trim: true,
-    match: [/^\S+@\S+\.\S+$/, 'Некорректный email']
+    minlength: [3, 'Логин должен содержать минимум 3 символа'],
+    maxlength: [30, 'Логин не может быть длиннее 30 символов'],
+    match: [/^[a-z0-9_-]+$/, 'Логин может содержать только буквы, цифры, _ и -']
   },
   password: {
     type: String,
@@ -57,7 +59,7 @@ const userSchema = new mongoose.Schema({
 });
 
 // Indexes
-userSchema.index({ email: 1 });
+userSchema.index({ login: 1 });
 
 // Virtual for full name
 userSchema.virtual('fullName').get(function() {
@@ -80,7 +82,7 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 // Generate JWT token
 userSchema.methods.generateAuthToken = function() {
   return jwt.sign(
-    { id: this._id, email: this.email },
+    { id: this._id, login: this.login },
     config.jwt.secret,
     { expiresIn: config.jwt.expire }
   );

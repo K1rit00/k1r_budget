@@ -6,14 +6,14 @@ const { verifyRefreshToken } = require('../middleware/auth');
 // @access  Public
 exports.register = async (req, res) => {
   try {
-    const { firstName, lastName, email, password } = req.body;
+    const { firstName, lastName, login, password } = req.body;
 
     // Check if user exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ login });
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'Пользователь с таким email уже существует'
+        message: 'Пользователь с таким логином уже существует'
       });
     }
 
@@ -21,7 +21,7 @@ exports.register = async (req, res) => {
     const user = await User.create({
       firstName,
       lastName,
-      email,
+      login,
       password
     });
 
@@ -40,7 +40,7 @@ exports.register = async (req, res) => {
           id: user._id,
           firstName: user.firstName,
           lastName: user.lastName,
-          email: user.email,
+          login: user.login,
           fullName: user.fullName
         },
         tokens: {
@@ -63,22 +63,22 @@ exports.register = async (req, res) => {
 // @access  Public
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { login, password } = req.body;
 
     // Validate input
-    if (!email || !password) {
+    if (!login || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Укажите email и пароль'
+        message: 'Укажите логин и пароль'
       });
     }
 
     // Find user with password
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ login }).select('+password');
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Неверный email или пароль'
+        message: 'Неверный логин или пароль'
       });
     }
 
@@ -87,7 +87,7 @@ exports.login = async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        message: 'Неверный email или пароль'
+        message: 'Неверный логин или пароль'
       });
     }
 
@@ -115,7 +115,7 @@ exports.login = async (req, res) => {
           id: user._id,
           firstName: user.firstName,
           lastName: user.lastName,
-          email: user.email,
+          login: user.login,
           fullName: user.fullName,
           currency: user.currency
         },
@@ -220,7 +220,7 @@ exports.getMe = async (req, res) => {
           id: user._id,
           firstName: user.firstName,
           lastName: user.lastName,
-          email: user.email,
+          login: user.login,
           fullName: user.fullName,
           currency: user.currency,
           lastLogin: user.lastLogin

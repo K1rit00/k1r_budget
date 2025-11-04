@@ -1,4 +1,4 @@
-import React, { Suspense, useMemo, lazy } from "react";
+import React, { Suspense, useMemo, lazy, useEffect, useState } from "react";
 import { SidebarProvider, SidebarInset } from "./components/ui/sidebar";
 import { AppSidebar } from "./components/AppSidebar";
 import { Auth } from "./components/Auth";
@@ -6,6 +6,13 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { LogOut } from "lucide-react";
+import { AppProvider, useAppContext, useAppActions } from "./contexts/AppContext";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { LoadingFallback } from "./components/common/LoadingFallback";
+import { NotificationCenter } from "./components/common/NotificationCenter";
+import { apiService } from "./services/api";
+import type { User } from "./types";
+
 // Локальные константы для избежания проблем с импортом
 const ROUTES = {
   DASHBOARD: "dashboard",
@@ -48,12 +55,6 @@ const PAGE_DESCRIPTIONS = {
   [ROUTES.MONTHLY]: "Планирование и контроль ежемесячных трат",
   [ROUTES.DEPOSITS]: "Управление депозитами, накопления и расходные портфели",
 } as const;
-import { AppProvider, useAppContext, useAppActions } from "./contexts/AppContext";
-import { ErrorBoundary } from "./components/ErrorBoundary";
-import { LoadingFallback } from "./components/common/LoadingFallback";
-import { NotificationCenter } from "./components/common/NotificationCenter";
-import { useLocalStorage } from "./hooks/useLocalStorage";
-import type { User } from "./types";
 
 // Lazy loading компонентов для оптимизации
 const Dashboard = lazy(() => import("./components/Dashboard"));
@@ -71,23 +72,48 @@ const Deposits = lazy(() => import("./components/Deposits"));
 function AppContent() {
   const { state } = useAppContext();
   const { setUser, setCurrentView } = useAppActions();
-  const [storedUser, , removeUser] = useLocalStorage<User | null>("user", null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
-  // Инициализируем пользователя из localStorage при загрузке
-  React.useEffect(() => {
-    if (storedUser && !state.user) {
-      setUser(storedUser);
-    }
-  }, [storedUser, state.user, setUser]);
+  // Проверяем сохраненного пользователя при загрузке приложения
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        // Проверяем есть ли токен
+        if (!apiService.isAuthenticated()) {
+          setIsCheckingAuth(false);
+          return;
+        }
+
+        // Если есть токен, но нет пользователя в state, загружаем данные
+        if (!state.user) {
+          const savedUser = await apiService.getSavedUser();
+          if (savedUser) {
+            setUser(savedUser);
+          }
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+      } finally {
+        setIsCheckingAuth(false);
+      }
+    };
+
+    checkAuth();
+  }, []); // Запускаем только один раз при монтировании
 
   const handleLogin = (userData: User) => {
     setUser(userData);
   };
 
-  const handleLogout = () => {
-    removeUser();
-    setCurrentView(ROUTES.DASHBOARD);
-    setUser(null);
+  const handleLogout = async () => {
+    try {
+      await apiService.logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setCurrentView(ROUTES.DASHBOARD);
+      setUser(null);
+    }
   };
 
   // Мемоизируем компоненты для предотвращения излишних ре-рендеров
@@ -139,6 +165,11 @@ function AppContent() {
     return typeof description === "function" && state.user ? description(state.user.name) : description || "Добро пожаловать в систему учёта бюджета";
   }, [state.currentView, state.user]);
 
+  // Показываем загрузку пока проверяем авторизацию
+  if (isCheckingAuth) {
+    return <LoadingFallback type="page" />;
+  }
+
   // Если пользователь не авторизован, показываем форму входа
   if (!state.user) {
     return <Auth onLogin={handleLogin} />;
@@ -152,7 +183,7 @@ function AppContent() {
           <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-40">
             <div className="flex h-16 items-center justify-between px-6">
               <div>
-                <h1 className="text-xl">{pageTitle}</h1>
+                <h1 className="text-xl font-semibold">{pageTitle}</h1>
                 <p className="text-sm text-muted-foreground">
                   {pageDescription}
                 </p>

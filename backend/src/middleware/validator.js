@@ -5,6 +5,7 @@ const validate = (req, res, next) => {
   if (!errors.isEmpty()) {
     return res.status(400).json({
       success: false,
+      message: errors.array()[0].msg,
       errors: errors.array()
     });
   }
@@ -12,16 +13,32 @@ const validate = (req, res, next) => {
 };
 
 exports.validateRegistration = [
-  body('firstName').trim().notEmpty().withMessage('Имя обязательно'),
-  body('lastName').trim().notEmpty().withMessage('Фамилия обязательна'),
-  body('email').isEmail().normalizeEmail().withMessage('Некорректный email'),
-  body('password').isLength({ min: 6 }).withMessage('Пароль должен содержать минимум 6 символов'),
+  body('firstName')
+    .trim()
+    .notEmpty().withMessage('Имя обязательно')
+    .isLength({ max: 50 }).withMessage('Имя не может быть длиннее 50 символов'),
+  body('lastName')
+    .trim()
+    .notEmpty().withMessage('Фамилия обязательна')
+    .isLength({ max: 50 }).withMessage('Фамилия не может быть длиннее 50 символов'),
+  body('login')
+    .trim()
+    .notEmpty().withMessage('Логин обязателен')
+    .isLength({ min: 3, max: 30 }).withMessage('Логин должен содержать от 3 до 30 символов')
+    .matches(/^[a-z0-9_-]+$/i).withMessage('Логин может содержать только буквы, цифры, _ и -')
+    .toLowerCase(),
+  body('password')
+    .isLength({ min: 6 }).withMessage('Пароль должен содержать минимум 6 символов'),
   validate
 ];
 
 exports.validateLogin = [
-  body('email').isEmail().normalizeEmail().withMessage('Некорректный email'),
-  body('password').notEmpty().withMessage('Пароль обязателен'),
+  body('login')
+    .trim()
+    .notEmpty().withMessage('Логин обязателен')
+    .toLowerCase(),
+  body('password')
+    .notEmpty().withMessage('Пароль обязателен'),
   validate
 ];
 
