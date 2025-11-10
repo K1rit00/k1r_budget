@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TrendingUp, Plus, DollarSign, Briefcase, Edit, Trash2, Target, Calendar, BarChart3, Filter, FileText, Loader2, RefreshCw, AlertCircle } from "lucide-react";
+import { TrendingUp, Plus, DollarSign, Briefcase, Edit, Trash2, Calendar, BarChart3, Loader2, RefreshCw, AlertCircle, Power, PowerOff, History, Play } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
@@ -10,13 +10,10 @@ import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Badge } from "./ui/badge";
-import { Progress } from "./ui/progress";
-import { Separator } from "./ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 import { useAppActions } from "../contexts/AppContext";
 import { apiService } from "../services/api";
-import type { IncomeGoal, IncomeCategory } from "../types";
 
 // Типы для доходов из API
 interface ApiIncome {
@@ -27,8 +24,8 @@ interface ApiIncome {
   description?: string;
   date: string;
   type: 'salary' | 'bonus' | 'investment' | 'freelance' | 'other';
-  isRecurring: boolean;
-  recurringDay?: number;
+  isAutoCreated?: boolean;
+  recurringIncomeId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -40,10 +37,44 @@ interface Income {
   description?: string;
   date: string;
   type: string;
-  isRecurring: boolean;
-  recurringDay?: number;
-  isAutoCreated?: boolean; // Флаг автоматически созданного дохода
-  sourceRecurringId?: string; // ID шаблона, из которого создан
+  isAutoCreated?: boolean;
+  recurringIncomeId?: string;
+}
+
+// Типы для регулярных доходов
+interface ApiRecurringIncome {
+  _id: string;
+  userId: string;
+  source: string;
+  amount: string;
+  description?: string;
+  type: string;
+  recurringDay: number;
+  isActive: boolean;
+  autoCreate: boolean;
+  lastCreated?: {
+    month: number;
+    year: number;
+  };
+  createdIncomes: any[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface RecurringIncome {
+  id: string;
+  source: string;
+  amount: number;
+  description?: string;
+  type: string;
+  recurringDay: number;
+  isActive: boolean;
+  autoCreate: boolean;
+  lastCreated?: {
+    month: number;
+    year: number;
+  };
+  createdCount: number;
 }
 
 // Маппинг типов доходов для отображения
@@ -66,31 +97,59 @@ const INCOME_TYPE_COLORS: Record<string, string> = {
 function Income() {
   const { addNotification } = useAppActions();
   const [incomes, setIncomes] = useState<Income[]>([]);
+  const [recurringIncomes, setRecurringIncomes] = useState<RecurringIncome[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isProcessingRecurring, setIsProcessingRecurring] = useState(false);
-  const [recurringIncomes, setRecurringIncomes] = useState<Income[]>([]);
-  const [pendingRecurringCount, setPendingRecurringCount] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
   
   const [isIncomeDialogOpen, setIsIncomeDialogOpen] = useState(false);
+  const [isRecurringDialogOpen, setIsRecurringDialogOpen] = useState(false);
   const [editingIncome, setEditingIncome] = useState<Income | null>(null);
-  const [recurringDayEnabled, setRecurringDayEnabled] = useState(false);
+  const [editingRecurring, setEditingRecurring] = useState<RecurringIncome | null>(null);
 
-  // Загрузка доходов при монтировании
+  // Загрузка данных при монтировании
   useEffect(() => {
-    loadIncomes();
+    loadData();
   }, []);
 
-  // Проверка регулярных доходов при загрузке
-  useEffect(() => {
-    if (incomes.length > 0) {
-      checkAndCreateRecurringIncomes();
+const loadData = async () => {
+  try {
+    setIsLoading(true);
+    await Promise.all([loadIncomes(), loadRecurringIncomes()]);
+    
+    // Автоматическая обработка после загрузки
+    await autoProcessRecurringIncomes();
+  } catch (error: any) {
+    console.error('Load data error:', error);
+    addNotification({ 
+      message: 'Ошибка загрузки данных', 
+      type: 'error' 
+    });
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+const autoProcessRecurringIncomes = async () => {
+  try {
+    const response = await apiService.processRecurringIncomes();
+    
+    if (response.success && response.created > 0) {
+      addNotification({ 
+        message: `🎉 Автоматически создано доходов: ${response.created}`, 
+        type: 'success' 
+      });
+      // Перезагружаем только доходы
+      await loadIncomes();
     }
-  }, [incomes]);
+  } catch (error: any) {
+    console.error('Auto process error:', error);
+    // Тихо игнорируем ошибки автоматической обработки
+  }
+};
 
   const loadIncomes = async () => {
     try {
-      setIsLoading(true);
       const response = await apiService.getIncome();
       
       if (response.success) {
@@ -101,85 +160,202 @@ function Income() {
           description: income.description,
           date: income.date,
           type: income.type,
-          isRecurring: income.isRecurring,
-          recurringDay: income.recurringDay,
-          isAutoCreated: income.description?.includes('[AUTO]') || false,
+          isAutoCreated: income.isAutoCreated || false,
+          recurringIncomeId: income.recurringIncomeId,
         }));
         setIncomes(mappedIncomes);
-        
-        // Сохраняем регулярные доходы отдельно
-        const recurring = mappedIncomes.filter((inc: Income) => inc.isRecurring);
-        setRecurringIncomes(recurring);
       }
     } catch (error: any) {
       console.error('Load incomes error:', error);
-      addNotification({ 
-        message: error.response?.data?.message || 'Ошибка загрузки доходов', 
-        type: 'error' 
-      });
-    } finally {
-      setIsLoading(false);
+      throw error;
     }
   };
 
-  // Автоматическое создание регулярных доходов
-  const checkAndCreateRecurringIncomes = async () => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const currentDay = now.getDate();
+  const loadRecurringIncomes = async () => {
+    try {
+      const response = await apiService.getRecurringIncomes();
+      
+      if (response.success) {
+        const mappedRecurring = response.data.map((rec: ApiRecurringIncome) => ({
+          id: rec._id,
+          source: rec.source,
+          amount: parseFloat(rec.amount),
+          description: rec.description,
+          type: rec.type,
+          recurringDay: rec.recurringDay,
+          isActive: rec.isActive,
+          autoCreate: rec.autoCreate,
+          lastCreated: rec.lastCreated,
+          createdCount: rec.createdIncomes?.length || 0,
+        }));
+        setRecurringIncomes(mappedRecurring);
+      }
+    } catch (error: any) {
+      console.error('Load recurring incomes error:', error);
+      throw error;
+    }
+  };
 
-    let createdCount = 0;
-    const createdIncomes: string[] = [];
-
-    for (const income of recurringIncomes) {
-      if (!income.recurringDay) continue;
-
-      // Проверяем, был ли уже создан доход в этом месяце из этого шаблона
-      const existsThisMonth = incomes.some(inc => {
-        const incDate = new Date(inc.date);
-        return inc.source === income.source &&
-               inc.amount === income.amount &&
-               inc.type === income.type &&
-               incDate.getMonth() === currentMonth &&
-               incDate.getFullYear() === currentYear &&
-               !inc.isRecurring; // Проверяем только реальные доходы
-      });
-
-      // Если день наступил и дохода в этом месяце еще нет
-      if (currentDay >= income.recurringDay && !existsThisMonth) {
-        try {
-          // Создаем новый доход с датой = recurringDay текущего месяца
-          const incomeDate = new Date(currentYear, currentMonth, income.recurringDay);
-          
-          const newIncomeData = {
-            source: income.source,
-            amount: income.amount.toString(),
-            date: incomeDate.toISOString().split('T')[0],
-            type: income.type,
-            description: `[AUTO] ${income.description || 'Регулярный доход создан автоматически'}`,
-            isRecurring: false,
-            recurringDay: undefined
-          };
-
-          const response = await apiService.createIncome(newIncomeData);
-          
-          if (response.success) {
-            createdCount++;
-            createdIncomes.push(income.source);
-          }
-        } catch (error) {
-          console.error('Error creating recurring income:', error);
+  // Обработка регулярных доходов (автоматическое создание)
+  const handleProcessRecurring = async () => {
+    try {
+      setIsProcessing(true);
+      const response = await apiService.processRecurringIncomes();
+      
+      if (response.success) {
+        if (response.created > 0) {
+          addNotification({ 
+            message: response.message, 
+            type: 'success' 
+          });
+          await loadData(); // Перезагружаем данные
+        } else {
+          addNotification({ 
+            message: 'Нет доходов для автоматического создания', 
+            type: 'info' 
+          });
         }
       }
+    } catch (error: any) {
+      console.error('Process recurring error:', error);
+      addNotification({ 
+        message: error.response?.data?.message || 'Ошибка обработки регулярных доходов', 
+        type: 'error' 
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Обработчики для обычных доходов
+  const handleIncomeSubmit = async (formData: FormData) => {
+    try {
+      setIsSubmitting(true);
+
+      const incomeData = {
+        source: formData.get("source") as string,
+        amount: formData.get("amount") as string,
+        date: formData.get("date") as string,
+        type: formData.get("type") as string,
+        description: formData.get("description") as string || undefined,
+      };
+
+      let response;
+      if (editingIncome) {
+        response = await apiService.updateIncome(editingIncome.id, incomeData);
+        addNotification({ message: "Доход успешно обновлен", type: "success" });
+      } else {
+        response = await apiService.createIncome(incomeData);
+        addNotification({ message: "Доход успешно добавлен", type: "success" });
+      }
+
+      if (response.success) {
+        await loadIncomes();
+        setIsIncomeDialogOpen(false);
+        setEditingIncome(null);
+      }
+    } catch (error: any) {
+      console.error('Submit income error:', error);
+      addNotification({ 
+        message: error.response?.data?.message || 'Ошибка сохранения дохода', 
+        type: 'error' 
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const deleteIncome = async (id: string) => {
+    if (!confirm('Вы уверены, что хотите удалить этот доход?')) {
+      return;
     }
 
-    // Уведомляем пользователя о созданных доходах
-    if (createdCount > 0) {
-      await loadIncomes(); // Обновляем список
+    try {
+      const response = await apiService.deleteIncome(id);
+      if (response.success) {
+        await loadIncomes();
+        addNotification({ message: "Доход удален", type: "info" });
+      }
+    } catch (error: any) {
+      console.error('Delete income error:', error);
       addNotification({ 
-        message: `Автоматически создано доходов: ${createdCount} (${createdIncomes.join(', ')})`, 
-        type: 'success',
+        message: error.response?.data?.message || 'Ошибка удаления дохода', 
+        type: 'error' 
+      });
+    }
+  };
+
+  // Обработчики для регулярных доходов
+  const handleRecurringSubmit = async (formData: FormData) => {
+    try {
+      setIsSubmitting(true);
+
+      const recurringData = {
+        source: formData.get("source") as string,
+        amount: formData.get("amount") as string,
+        type: formData.get("type") as string,
+        recurringDay: parseInt(formData.get("recurringDay") as string),
+        description: formData.get("description") as string || undefined,
+        autoCreate: formData.get("autoCreate") === "on",
+      };
+
+      let response;
+      if (editingRecurring) {
+        response = await apiService.updateRecurringIncome(editingRecurring.id, recurringData);
+        addNotification({ message: "Шаблон успешно обновлен", type: "success" });
+      } else {
+        response = await apiService.createRecurringIncome(recurringData);
+        addNotification({ message: "Шаблон успешно создан", type: "success" });
+      }
+
+      if (response.success) {
+        await loadRecurringIncomes();
+        setIsRecurringDialogOpen(false);
+        setEditingRecurring(null);
+      }
+    } catch (error: any) {
+      console.error('Submit recurring error:', error);
+      addNotification({ 
+        message: error.response?.data?.message || 'Ошибка сохранения шаблона', 
+        type: 'error' 
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const deleteRecurring = async (id: string) => {
+    if (!confirm('Вы уверены, что хотите удалить этот шаблон? Созданные доходы сохранятся.')) {
+      return;
+    }
+
+    try {
+      const response = await apiService.deleteRecurringIncome(id);
+      if (response.success) {
+        await loadRecurringIncomes();
+        addNotification({ message: "Шаблон удален", type: "info" });
+      }
+    } catch (error: any) {
+      console.error('Delete recurring error:', error);
+      addNotification({ 
+        message: error.response?.data?.message || 'Ошибка удаления шаблона', 
+        type: 'error' 
+      });
+    }
+  };
+
+  const toggleRecurring = async (id: string) => {
+    try {
+      const response = await apiService.toggleRecurringIncome(id);
+      if (response.success) {
+        await loadRecurringIncomes();
+        addNotification({ message: response.message, type: "success" });
+      }
+    } catch (error: any) {
+      console.error('Toggle recurring error:', error);
+      addNotification({ 
+        message: error.response?.data?.message || 'Ошибка изменения статуса', 
+        type: 'error' 
       });
     }
   };
@@ -206,7 +382,9 @@ function Income() {
   };
 
   const getRecurringMonthlyIncome = () => {
-    return recurringIncomes.reduce((sum, income) => sum + income.amount, 0);
+    return recurringIncomes
+      .filter(rec => rec.isActive)
+      .reduce((sum, rec) => sum + rec.amount, 0);
   };
 
   // Данные для аналитики
@@ -240,83 +418,7 @@ function Income() {
 
     return Object.values(monthlyData)
       .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
-      .slice(-12); // Последние 12 месяцев
-  };
-
-  // Обработчики форм
-  const handleIncomeSubmit = async (formData: FormData) => {
-    try {
-      setIsSubmitting(true);
-      
-      const isRecurring = formData.get("isRecurring") === "on";
-      const recurringDay = formData.get("recurringDay") ? parseInt(formData.get("recurringDay") as string) : undefined;
-
-      const incomeData = {
-        source: formData.get("source") as string,
-        amount: formData.get("amount") as string,
-        date: formData.get("date") as string,
-        type: formData.get("type") as string,
-        description: formData.get("description") as string || undefined,
-        isRecurring,
-        recurringDay: isRecurring ? recurringDay : undefined,
-      };
-
-      let response;
-      if (editingIncome) {
-        response = await apiService.updateIncome(editingIncome.id, incomeData);
-        addNotification({ message: "Доход успешно обновлен", type: "success" });
-      } else {
-        response = await apiService.createIncome(incomeData);
-        addNotification({ message: "Доход успешно добавлен", type: "success" });
-      }
-
-      if (response.success) {
-        await loadIncomes(); // Перезагружаем список
-        setIsIncomeDialogOpen(false);
-        setEditingIncome(null);
-        setRecurringDayEnabled(false);
-      }
-    } catch (error: any) {
-      console.error('Submit income error:', error);
-      addNotification({ 
-        message: error.response?.data?.message || 'Ошибка сохранения дохода', 
-        type: 'error' 
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const deleteIncome = async (id: string) => {
-    if (!confirm('Вы уверены, что хотите удалить этот доход?')) {
-      return;
-    }
-
-    try {
-      const response = await apiService.deleteIncome(id);
-      if (response.success) {
-        await loadIncomes();
-        addNotification({ message: "Доход удален", type: "info" });
-      }
-    } catch (error: any) {
-      console.error('Delete income error:', error);
-      addNotification({ 
-        message: error.response?.data?.message || 'Ошибка удаления дохода', 
-        type: 'error' 
-      });
-    }
-  };
-
-  const handleEditIncome = (income: Income) => {
-    setEditingIncome(income);
-    setRecurringDayEnabled(income.isRecurring);
-    setIsIncomeDialogOpen(true);
-  };
-
-  const handleCloseDialog = () => {
-    setIsIncomeDialogOpen(false);
-    setEditingIncome(null);
-    setRecurringDayEnabled(false);
+      .slice(-12);
   };
 
   if (isLoading) {
@@ -365,7 +467,7 @@ function Income() {
               {getRecurringMonthlyIncome().toLocaleString("kk-KZ")} ₸
             </p>
             <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
-              {recurringIncomes.length} шаблонов
+              {recurringIncomes.filter(r => r.isActive).length} активных шаблонов
             </p>
           </CardContent>
         </Card>
@@ -376,11 +478,12 @@ function Income() {
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="incomes">Доходы</TabsTrigger>
           <TabsTrigger value="recurring">
-            Регулярные ({recurringIncomes.length})
+            Шаблоны ({recurringIncomes.length})
           </TabsTrigger>
           <TabsTrigger value="analytics">Аналитика</TabsTrigger>
         </TabsList>
 
+        {/* Вкладка: Доходы */}
         <TabsContent value="incomes">
           <Card className="rounded-2xl">
             <CardHeader className="flex flex-row items-center justify-between">
@@ -444,41 +547,6 @@ function Income() {
                         defaultValue={editingIncome?.date ? new Date(editingIncome.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
                       />
                     </div>
-                    <div className="space-y-3 border p-3 rounded-lg bg-muted/30">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox 
-                          id="isRecurring" 
-                          name="isRecurring" 
-                          defaultChecked={editingIncome?.isRecurring}
-                          onCheckedChange={(checked) => setRecurringDayEnabled(!!checked)}
-                        />
-                        <Label htmlFor="isRecurring" className="font-medium">
-                          Регулярный доход (шаблон)
-                        </Label>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Регулярный доход - это шаблон, который не учитывается в статистике. 
-                        Система автоматически создаст реальные доходы в нужные дни месяца.
-                      </p>
-                      {(recurringDayEnabled || editingIncome?.isRecurring) && (
-                        <div>
-                          <Label htmlFor="recurringDay">День месяца для автоматического создания</Label>
-                          <Input 
-                            id="recurringDay" 
-                            name="recurringDay" 
-                            type="number"
-                            min="1"
-                            max="31"
-                            defaultValue={editingIncome?.recurringDay || 1}
-                            placeholder="1-31"
-                            required={recurringDayEnabled}
-                          />
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Например: 5 = каждое 5 число месяца
-                          </p>
-                        </div>
-                      )}
-                    </div>
                     <div>
                       <Label htmlFor="description">Описание</Label>
                       <Textarea 
@@ -503,7 +571,10 @@ function Income() {
                       <Button 
                         type="button" 
                         variant="outline" 
-                        onClick={handleCloseDialog}
+                        onClick={() => {
+                          setIsIncomeDialogOpen(false);
+                          setEditingIncome(null);
+                        }}
                         disabled={isSubmitting}
                       >
                         Отмена
@@ -515,7 +586,7 @@ function Income() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {incomes.filter(inc => !inc.isRecurring).length === 0 ? (
+                {incomes.length === 0 ? (
                   <div className="text-center py-12">
                     <DollarSign className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                     <p className="text-muted-foreground">
@@ -524,7 +595,6 @@ function Income() {
                   </div>
                 ) : (
                   incomes
-                    .filter(inc => !inc.isRecurring) // Показываем только реальные доходы
                     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                     .map(income => (
                       <div key={income.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
@@ -561,7 +631,10 @@ function Income() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleEditIncome(income)}
+                            onClick={() => {
+                              setEditingIncome(income);
+                              setIsIncomeDialogOpen(true);
+                            }}
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
@@ -581,73 +654,256 @@ function Income() {
           </Card>
         </TabsContent>
 
+        {/* Вкладка: Шаблоны регулярных доходов */}
         <TabsContent value="recurring">
           <Card className="rounded-2xl">
-            <CardHeader>
-              <CardTitle>Шаблоны регулярных доходов</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Эти доходы не учитываются в статистике. Система автоматически создаст реальные доходы в указанные дни месяца.
-              </p>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Шаблоны регулярных доходов</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Система автоматически создаст доходы в указанные дни месяца
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleProcessRecurring}
+                  disabled={isProcessing}
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Обработка...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      Запустить
+                    </>
+                  )}
+                </Button>
+                <Dialog open={isRecurringDialogOpen} onOpenChange={setIsRecurringDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button onClick={() => setEditingRecurring(null)}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Создать шаблон
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>{editingRecurring ? "Редактировать шаблон" : "Создать шаблон"}</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={(e) => { e.preventDefault(); handleRecurringSubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
+                      <div>
+                        <Label htmlFor="rec-type">Тип дохода</Label>
+                        <Select name="type" defaultValue={editingRecurring?.type || "salary"}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Выберите тип" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="salary">Зарплата</SelectItem>
+                            <SelectItem value="bonus">Бонус</SelectItem>
+                            <SelectItem value="investment">Инвестиции</SelectItem>
+                            <SelectItem value="freelance">Фриланс</SelectItem>
+                            <SelectItem value="other">Другое</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="rec-amount">Сумма (₸)</Label>
+                        <Input 
+                          id="rec-amount" 
+                          name="amount" 
+                          type="number" 
+                          step="0.01" 
+                          required 
+                          defaultValue={editingRecurring?.amount}
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="rec-source">Источник</Label>
+                        <Input 
+                          id="rec-source" 
+                          name="source" 
+                          required 
+                          defaultValue={editingRecurring?.source}
+                          placeholder="Название компании, проекта и т.д."
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="recurringDay">День месяца для создания</Label>
+                        <Input 
+                          id="recurringDay" 
+                          name="recurringDay" 
+                          type="number"
+                          min="1"
+                          max="31"
+                          required
+                          defaultValue={editingRecurring?.recurringDay || 1}
+                          placeholder="1-31"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Например: 5 = каждое 5 число месяца
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-2 border p-3 rounded-lg bg-muted/30">
+                        <Checkbox 
+                          id="autoCreate" 
+                          name="autoCreate" 
+                          defaultChecked={editingRecurring?.autoCreate !== false}
+                        />
+                        <Label htmlFor="autoCreate" className="font-medium cursor-pointer">
+                          Автоматически создавать доходы
+                        </Label>
+                      </div>
+                      <div>
+                        <Label htmlFor="rec-description">Описание</Label>
+                        <Textarea 
+                          id="rec-description" 
+                          name="description" 
+                          defaultValue={editingRecurring?.description}
+                          placeholder="Дополнительная информация"
+                          rows={3}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button type="submit" className="flex-1" disabled={isSubmitting}>
+                          {isSubmitting ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Сохранение...
+                            </>
+                          ) : (
+                            editingRecurring ? "Обновить" : "Создать"
+                          )}
+                        </Button>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          onClick={() => {
+                            setIsRecurringDialogOpen(false);
+                            setEditingRecurring(null);
+                          }}
+                          disabled={isSubmitting}
+                        >
+                          Отмена
+                        </Button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </CardHeader>
             <CardContent>
+              {recurringIncomes.length > 0 && (
+                <Alert className="mb-4">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Автоматическое создание</AlertTitle>
+                  <AlertDescription>
+                    Нажмите кнопку "Запустить" для проверки и создания доходов из активных шаблонов, 
+                    или дождитесь автоматической обработки при входе в систему.
+                  </AlertDescription>
+                </Alert>
+              )}
+              
               <div className="space-y-4">
                 {recurringIncomes.length === 0 ? (
                   <div className="text-center py-12">
                     <RefreshCw className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                     <p className="text-muted-foreground">
-                      Нет регулярных доходов. Создайте доход с отметкой "Регулярный доход".
+                      Нет регулярных доходов. Создайте шаблон для автоматического создания доходов.
                     </p>
                   </div>
                 ) : (
-                  recurringIncomes.map(income => (
-                    <div key={income.id} className="flex items-center justify-between p-4 border rounded-lg bg-purple-50/50 dark:bg-purple-950/10">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <RefreshCw className="w-4 h-4 text-purple-600" />
-                          <h4 className="font-medium">{income.source}</h4>
-                          <Badge variant="secondary" className="text-xs">
-                            Шаблон
-                          </Badge>
-                          <Badge variant="outline" className="text-xs">
-                            {INCOME_TYPE_LABELS[income.type] || income.type}
-                          </Badge>
+                  recurringIncomes
+                    .sort((a, b) => a.recurringDay - b.recurringDay)
+                    .map(recurring => (
+                      <div 
+                        key={recurring.id} 
+                        className={`flex items-center justify-between p-4 border rounded-lg transition-colors ${
+                          recurring.isActive 
+                            ? 'bg-purple-50/50 dark:bg-purple-950/10 hover:bg-purple-100/50 dark:hover:bg-purple-950/20' 
+                            : 'bg-muted/30 opacity-60'
+                        }`}
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <RefreshCw className={`w-4 h-4 ${recurring.isActive ? 'text-purple-600' : 'text-muted-foreground'}`} />
+                            <h4 className="font-medium">{recurring.source}</h4>
+                            <Badge variant={recurring.isActive ? "default" : "secondary"} className="text-xs">
+                              {recurring.isActive ? "Активен" : "Неактивен"}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {INCOME_TYPE_LABELS[recurring.type] || recurring.type}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              <span>Каждое {recurring.recurringDay} число</span>
+                            </div>
+                            {recurring.createdCount > 0 && (
+                              <div className="flex items-center gap-1">
+                                <History className="w-3 h-3" />
+                                <span>Создано: {recurring.createdCount}</span>
+                              </div>
+                            )}
+                          </div>
+                          {recurring.description && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {recurring.description}
+                            </p>
+                          )}
+                          {recurring.lastCreated && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Последнее создание: {new Date(recurring.lastCreated.year, recurring.lastCreated.month).toLocaleDateString("ru-RU", { month: 'long', year: 'numeric' })}
+                            </p>
+                          )}
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          Автоматически создается каждое {income.recurringDay} число месяца
-                        </p>
-                        {income.description && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {income.description.replace('[AUTO] ', '')}
-                          </p>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <span className={`text-lg font-semibold ${recurring.isActive ? 'text-purple-600' : 'text-muted-foreground'}`}>
+                            {recurring.amount.toLocaleString("kk-KZ")} ₸
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleRecurring(recurring.id)}
+                            title={recurring.isActive ? "Деактивировать" : "Активировать"}
+                          >
+                            {recurring.isActive ? (
+                              <Power className="w-4 h-4 text-green-600" />
+                            ) : (
+                              <PowerOff className="w-4 h-4 text-muted-foreground" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setEditingRecurring(recurring);
+                              setIsRecurringDialogOpen(true);
+                            }}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteRecurring(recurring.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg font-semibold text-purple-600">
-                          {income.amount.toLocaleString("kk-KZ")} ₸
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEditIncome(income)}
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deleteIncome(income.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))
+                    ))
                 )}
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* Вкладка: Аналитика */}
         <TabsContent value="analytics">
           <div className="space-y-6">
             {/* Доходы по типам */}
@@ -678,9 +934,12 @@ function Income() {
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
-                  <p className="text-muted-foreground text-center py-8">
-                    Нет данных для анализа. Добавьте доходы для отображения аналитики.
-                  </p>
+                  <div className="text-center py-12">
+                    <BarChart3 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">
+                      Нет данных для анализа. Добавьте доходы для отображения аналитики.
+                    </p>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -702,12 +961,62 @@ function Income() {
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
-                  <p className="text-muted-foreground text-center py-8">
-                    Нет данных для отображения динамики. Добавьте доходы за несколько месяцев.
-                  </p>
+                  <div className="text-center py-12">
+                    <TrendingUp className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">
+                      Нет данных для отображения динамики. Добавьте доходы за несколько месяцев.
+                    </p>
+                  </div>
                 )}
               </CardContent>
             </Card>
+
+            {/* Сводка по регулярным доходам */}
+            {recurringIncomes.length > 0 && (
+              <Card className="rounded-2xl">
+                <CardHeader>
+                  <CardTitle>Сводка по регулярным доходам</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {recurringIncomes
+                      .filter(rec => rec.isActive)
+                      .sort((a, b) => b.amount - a.amount)
+                      .map(recurring => (
+                        <div key={recurring.id} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center`} style={{ backgroundColor: `${INCOME_TYPE_COLORS[recurring.type]}20` }}>
+                              <Briefcase className="w-5 h-5" style={{ color: INCOME_TYPE_COLORS[recurring.type] }} />
+                            </div>
+                            <div>
+                              <p className="font-medium">{recurring.source}</p>
+                              <p className="text-xs text-muted-foreground">
+                                Каждое {recurring.recurringDay} число • {INCOME_TYPE_LABELS[recurring.type]}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold text-purple-600">
+                              {recurring.amount.toLocaleString("kk-KZ")} ₸
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {recurring.createdCount} создано
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                  <div className="mt-4 pt-4 border-t">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium">Ожидаемый ежемесячный доход:</span>
+                      <span className="text-lg font-bold text-purple-600">
+                        {getRecurringMonthlyIncome().toLocaleString("kk-KZ")} ₸
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </TabsContent>
       </Tabs>

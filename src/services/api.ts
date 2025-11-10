@@ -191,6 +191,42 @@ export const apiService = {
     return response.data;
   },
 
+  // Recurring Income (Регулярные доходы)
+  getRecurringIncomes: async () => {
+    const response = await api.get('/recurring-income');
+    return response.data;
+  },
+
+  createRecurringIncome: async (data: any) => {
+    const response = await api.post('/recurring-income', data);
+    return response.data;
+  },
+
+  updateRecurringIncome: async (id: string, data: any) => {
+    const response = await api.put(`/recurring-income/${id}`, data);
+    return response.data;
+  },
+
+  deleteRecurringIncome: async (id: string) => {
+    const response = await api.delete(`/recurring-income/${id}`);
+    return response.data;
+  },
+
+  toggleRecurringIncome: async (id: string) => {
+    const response = await api.patch(`/recurring-income/${id}/toggle`);
+    return response.data;
+  },
+
+  processRecurringIncomes: async () => {
+    const response = await api.post('/recurring-income/process');
+    return response.data;
+  },
+
+  getRecurringIncomeHistory: async (id: string) => {
+    const response = await api.get(`/recurring-income/${id}/history`);
+    return response.data;
+  },
+
   // Categories
   getCategories: async (type?: 'expense' | 'income') => {
     const response = await api.get('/categories', { params: { type } });
