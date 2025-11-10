@@ -40,6 +40,12 @@ const incomeSchema = new mongoose.Schema({
     type: Number,
     min: 1,
     max: 31
+  },
+  // Флаг для отслеживания зашифрованности
+  _encrypted: {
+    type: Boolean,
+    default: false,
+    select: false
   }
 }, {
   timestamps: true
@@ -49,24 +55,85 @@ const incomeSchema = new mongoose.Schema({
 incomeSchema.index({ userId: 1, date: -1 });
 incomeSchema.index({ userId: 1, type: 1 });
 
+// Проверка, зашифрованы ли данные
+function isEncrypted(value) {
+  if (!value || typeof value !== 'string') return false;
+  
+  // Проверяем формат base64 и минимальную длину зашифрованных данных
+  // Зашифрованные данные: salt(64) + iv(16) + tag(16) + encrypted(минимум несколько байт)
+  // В base64 это минимум ~128 символов
+  const base64Regex = /^[A-Za-z0-9+/]+=*$/;
+  return base64Regex.test(value) && value.length > 100;
+}
+
 // Encrypt amount before saving
 incomeSchema.pre('save', function(next) {
-  if (this.isModified('amount') && !this.amount.includes('=')) {
-    this.amount = encryptionService.encrypt(this.amount.toString());
+  if (this.isModified('amount')) {
+    // Если amount - число или строка с числом, и еще не зашифровано
+    if (!isEncrypted(this.amount)) {
+      try {
+        this.amount = encryptionService.encrypt(this.amount.toString());
+        this._encrypted = true;
+      } catch (error) {
+        console.error('Encryption error on save:', error);
+        return next(error);
+      }
+    }
   }
   next();
 });
+
+// Также обрабатываем findOneAndUpdate, updateOne, updateMany
+incomeSchema.pre('findOneAndUpdate', function(next) {
+  const update = this.getUpdate();
+  
+  // Обрабатываем разные форматы обновления
+  const amountUpdate = update.$set?.amount || update.amount;
+  
+  if (amountUpdate && !isEncrypted(amountUpdate)) {
+    try {
+      const encrypted = encryptionService.encrypt(amountUpdate.toString());
+      if (update.$set) {
+        update.$set.amount = encrypted;
+      } else {
+        update.amount = encrypted;
+      }
+    } catch (error) {
+      console.error('Encryption error on update:', error);
+      return next(error);
+    }
+  }
+  
+  next();
+});
+
+// Безопасная расшифровка
+function safeDecrypt(value) {
+  if (!value || typeof value !== 'string') {
+    return value;
+  }
+  
+  // Если данные не похожи на зашифрованные, возвращаем как есть
+  if (!isEncrypted(value)) {
+    console.warn('Data appears to be unencrypted:', value.substring(0, 20));
+    return value;
+  }
+  
+  try {
+    return encryptionService.decrypt(value);
+  } catch (error) {
+    console.error('Decryption error:', error.message);
+    // Возвращаем original value или null, чтобы не сломать приложение
+    return null;
+  }
+}
 
 // Decrypt amount after finding
 incomeSchema.post('find', function(docs) {
   if (Array.isArray(docs)) {
     docs.forEach(doc => {
       if (doc.amount) {
-        try {
-          doc.amount = encryptionService.decrypt(doc.amount);
-        } catch (e) {
-          console.error('Decryption error:', e);
-        }
+        doc.amount = safeDecrypt(doc.amount);
       }
     });
   }
@@ -74,11 +141,13 @@ incomeSchema.post('find', function(docs) {
 
 incomeSchema.post('findOne', function(doc) {
   if (doc && doc.amount) {
-    try {
-      doc.amount = encryptionService.decrypt(doc.amount);
-    } catch (e) {
-      console.error('Decryption error:', e);
-    }
+    doc.amount = safeDecrypt(doc.amount);
+  }
+});
+
+incomeSchema.post('findOneAndUpdate', function(doc) {
+  if (doc && doc.amount) {
+    doc.amount = safeDecrypt(doc.amount);
   }
 });
 
