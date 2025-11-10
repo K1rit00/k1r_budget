@@ -129,6 +129,15 @@ export interface RentProperty {
   utilitiesIncluded: boolean;
   description?: string;
   tenants: RentTenant[];
+  utilitiesAmount?: number; // Фиксированная сумма коммунальных платежей
+  utilitiesType?: "included" | "fixed" | "variable"; // Тип коммунальных платежей
+  utilities?: UtilityItem[]; // Список коммунальных услуг с фиксированной суммой
+}
+
+export interface UtilityItem {
+  id: string;
+  name: string;
+  amount: number;
 }
 
 export interface RentTenant {
@@ -149,6 +158,9 @@ export interface RentPayment {
   status: "pending" | "paid" | "confirmed" | "overdue";
   confirmationDate?: string;
   notes?: string;
+  receiptFile?: string; // Base64 encoded file
+  receiptFileName?: string;
+  paymentType?: "rent" | "utilities"; // Тип платежа: аренда или коммуналка
 }
 
 // Типы для коммунальных услуг
