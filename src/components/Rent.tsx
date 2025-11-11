@@ -1,8 +1,7 @@
-import React from "react";
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
-import { Building, Plus, Edit, Trash2, DollarSign, Calendar, FileText, Upload, Download, Eye, X } from "lucide-react";
+import { Building, Plus, Edit, Trash2, DollarSign, Calendar, FileText, Download, Eye, X, Loader2, AlertCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Input } from "./ui/input";
@@ -11,89 +10,134 @@ import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Badge } from "./ui/badge";
 import { Separator } from "./ui/separator";
-import { ScrollArea } from "./ui/scroll-area";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from "recharts";
+import { Alert, AlertDescription } from "./ui/alert";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { useAppActions } from "../contexts/AppContext";
-import { useLocalStorage } from "../hooks/useLocalStorage";
-import type { RentProperty, RentPayment, UtilityItem } from "../types";
-import { toast } from "sonner@2.0.3";
+import { apiService } from "../services/api";
+import { toast } from "sonner";
+
+// Типы данных согласно бэкенд модели
+interface UtilityItem {
+  _id?: string;
+  name: string;
+  amount: number;
+}
+
+interface RentProperty {
+  _id: string;
+  address: string;
+  ownerName: string;
+  rentAmount: number;
+  deposit: number;
+  startDate: string;
+  endDate?: string;
+  status: "active" | "completed" | "cancelled";
+  utilitiesIncluded: boolean;
+  utilitiesType: "included" | "fixed" | "variable";
+  utilities?: UtilityItem[];
+  utilitiesAmount?: number;
+  description?: string;
+  tenants?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface RentPayment {
+  _id: string;
+  propertyId: string;
+  amount: number;
+  paymentDate: string;
+  status: "paid" | "pending" | "overdue" | "cancelled";
+  paymentType: "rent" | "utilities" | "deposit" | "other";
+  notes?: string;
+  receiptFile?: string;
+  receiptFileName?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface RentStatistics {
+  totalExpenseThisMonth: number;
+  activePropertiesCount: number;
+  pendingPaymentsCount: number;
+  upcomingPaymentAmount: number;
+  monthlyData?: Array<{
+    month: string;
+    rent: number;
+    utilities: number;
+    total: number;
+  }>;
+}
 
 function Rent() {
   const { addNotification } = useAppActions();
-  const [properties, setProperties] = useLocalStorage<RentProperty[]>("rent-properties", []);
-  const [payments, setPayments] = useLocalStorage<RentPayment[]>("rent-payments", []);
-  
+  const [properties, setProperties] = useState<RentProperty[]>([]);
+  const [payments, setPayments] = useState<RentPayment[]>([]);
+  const [statistics, setStatistics] = useState<RentStatistics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [isPropertyDialogOpen, setIsPropertyDialogOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<RentProperty | null>(null);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>("");
   const [receiptFile, setReceiptFile] = useState<{ data: string; name: string } | null>(null);
-  const [utilityItems, setUtilityItems] = useState<UtilityItem[]>([{ id: Date.now().toString(), name: "", amount: 0 }]);
+  const [utilityItems, setUtilityItems] = useState<UtilityItem[]>([{ name: "", amount: 0 }]);
   const [selectedUtilitiesType, setSelectedUtilitiesType] = useState<"included" | "fixed" | "variable">("variable");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Расчеты для статистики
-  const getTotalRentExpense = () => {
-    const currentMonth = new Date().getMonth();
-    const currentYear = new Date().getFullYear();
-    
-    return payments
-      .filter(payment => {
-        const paymentDate = new Date(payment.paymentDate);
-        return paymentDate.getMonth() === currentMonth && 
-               paymentDate.getFullYear() === currentYear &&
-               payment.status === "paid";
-      })
-      .reduce((sum, payment) => sum + payment.amount, 0);
-  };
+  // Загрузка данных при монтировании
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const getActivePropertiesCount = () => {
-    return properties.filter(property => property.status === "active").length;
-  };
-
-  const getPendingPaymentsCount = () => {
-    return payments.filter(payment => payment.status === "pending").length;
-  };
-
-  const getUpcomingPaymentAmount = () => {
-    const activeProperty = properties.find(p => p.status === "active");
-    if (!activeProperty) return 0;
-    
-    let total = activeProperty.rentAmount;
-    if (activeProperty.utilitiesType === "fixed" && activeProperty.utilitiesAmount) {
-      total += activeProperty.utilitiesAmount;
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      await Promise.all([
+        loadProperties(),
+        loadPayments(),
+        loadStatistics()
+      ]);
+    } catch (err: any) {
+      console.error("Error loading data:", err);
+      setError(err.response?.data?.message || "Ошибка загрузки данных");
+      toast.error("Не удалось загрузить данные");
+    } finally {
+      setLoading(false);
     }
-    return total;
   };
 
-  // Данные для аналитики
-  const getMonthlyExpenseData = () => {
-    const monthlyData = payments.reduce((acc, payment) => {
-      if (payment.status !== "paid") return acc;
-      
-      const date = new Date(payment.paymentDate);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      const monthName = date.toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
-      
-      if (!acc[monthKey]) {
-        acc[monthKey] = { month: monthName, rent: 0, utilities: 0, total: 0 };
-      }
-      
-      if (payment.paymentType === "utilities") {
-        acc[monthKey].utilities += payment.amount;
-      } else {
-        acc[monthKey].rent += payment.amount;
-      }
-      acc[monthKey].total += payment.amount;
-      
-      return acc;
-    }, {} as Record<string, { month: string; rent: number; utilities: number; total: number }>);
+  const loadProperties = async () => {
+    try {
+      const response = await apiService.getRentProperties();
+      setProperties(response.data || []);
+    } catch (error: any) {
+      console.error("Error loading properties:", error);
+      throw error;
+    }
+  };
 
-    return Object.values(monthlyData).sort((a, b) => {
-      const [aYear, aMonth] = a.month.split(" ");
-      const [bYear, bMonth] = b.month.split(" ");
-      return new Date(`${aYear}-${aMonth}-01`).getTime() - new Date(`${bYear}-${bMonth}-01`).getTime();
-    });
+  const loadPayments = async () => {
+    try {
+      const response = await apiService.getRentPayments();
+      setPayments(response.data || []);
+    } catch (error: any) {
+      console.error("Error loading payments:", error);
+      throw error;
+    }
+  };
+
+  const loadStatistics = async () => {
+    try {
+      const response = await apiService.getRentStatistics();
+      setStatistics(response.data || null);
+    } catch (error: any) {
+      console.error("Error loading statistics:", error);
+      // Не бросаем ошибку, статистика не критична
+    }
   };
 
   // Обработчик загрузки файла
@@ -101,13 +145,11 @@ function Rent() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Проверка размера файла (макс 5MB)
     if (file.size > 5 * 1024 * 1024) {
       toast.error("Файл слишком большой. Максимальный размер: 5MB");
       return;
     }
 
-    // Проверка типа файла
     const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
     if (!allowedTypes.includes(file.type)) {
       toast.error("Неподдерживаемый формат файла. Используйте JPG, PNG, WEBP или PDF");
@@ -121,6 +163,170 @@ function Rent() {
       toast.success("Квитанция загружена");
     };
     reader.readAsDataURL(file);
+  };
+
+  // Обработчик создания/обновления объекта недвижимости
+  const handlePropertySubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    try {
+      setSubmitting(true);
+
+      const formData = new FormData(e.currentTarget);
+      const utilitiesType = formData.get("utilitiesType") as "included" | "fixed" | "variable";
+
+      let totalUtilitiesAmount = 0;
+      let filteredUtilities: UtilityItem[] | undefined = undefined;
+
+      if (utilitiesType === "fixed") {
+        filteredUtilities = utilityItems.filter(item => item.name.trim() && item.amount > 0);
+        totalUtilitiesAmount = filteredUtilities.reduce((sum, item) => sum + item.amount, 0);
+      }
+
+      const propertyData = {
+        address: formData.get("address") as string,
+        ownerName: formData.get("ownerName") as string,
+        rentAmount: parseFloat(formData.get("rentAmount") as string),
+        deposit: parseFloat(formData.get("deposit") as string),
+        startDate: formData.get("startDate") as string,
+        endDate: (formData.get("endDate") as string) || undefined,
+        status: "active" as const,
+        utilitiesIncluded: utilitiesType === "included",
+        utilitiesType: utilitiesType,
+        utilities: filteredUtilities,
+        utilitiesAmount: utilitiesType === "fixed" ? totalUtilitiesAmount : undefined,
+        description: (formData.get("description") as string) || undefined,
+        tenants: []
+      };
+
+      if (editingProperty) {
+        await apiService.updateRentProperty(editingProperty._id, propertyData);
+        toast.success("Объект недвижимости обновлен");
+        addNotification({ message: "Объект недвижимости обновлен", type: "success" });
+      } else {
+        await apiService.createRentProperty(propertyData);
+        toast.success("Объект недвижимости добавлен");
+        addNotification({ message: "Объект недвижимости добавлен", type: "success" });
+      }
+
+      setIsPropertyDialogOpen(false);
+      setEditingProperty(null);
+      resetPropertyForm();
+      await loadProperties();
+      await loadStatistics();
+
+    } catch (err: any) {
+      console.error("Error saving property:", err);
+      const errorMessage = err.response?.data?.message || "Ошибка сохранения объекта недвижимости";
+      toast.error(errorMessage);
+
+      // Показываем детали ошибок валидации
+      if (err.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        err.response.data.errors.forEach((error: string) => {
+          toast.error(error);
+        });
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Обработчик создания платежа
+  const handlePaymentSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    try {
+      setSubmitting(true);
+
+      const formData = new FormData(e.currentTarget);
+
+      const paymentData = {
+        propertyId: selectedPropertyId,
+        amount: parseFloat(formData.get("amount") as string),
+        paymentDate: formData.get("paymentDate") as string,
+        status: "paid" as const,
+        paymentType: formData.get("paymentType") as "rent" | "utilities" | "deposit" | "other",
+        notes: (formData.get("notes") as string) || undefined,
+        receiptFile: receiptFile?.data,
+        receiptFileName: receiptFile?.name
+      };
+
+      await apiService.createRentPayment(paymentData);
+
+      toast.success("Платеж добавлен успешно");
+      addNotification({ message: "Платеж добавлен успешно", type: "success" });
+
+      setIsPaymentDialogOpen(false);
+      resetPaymentForm();
+      await loadPayments();
+      await loadStatistics();
+
+    } catch (err: any) {
+      console.error("Error saving payment:", err);
+      const errorMessage = err.response?.data?.message || "Ошибка добавления платежа";
+      toast.error(errorMessage);
+
+      if (err.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        err.response.data.errors.forEach((error: string) => {
+          toast.error(error);
+        });
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Удаление объекта недвижимости
+  const deleteProperty = async (id: string) => {
+    if (!confirm("Вы уверены, что хотите удалить этот объект? Все связанные платежи также будут удалены.")) {
+      return;
+    }
+
+    try {
+      await apiService.deleteRentProperty(id);
+      toast.success("Объект недвижимости удален");
+      addNotification({ message: "Объект недвижимости удален", type: "info" });
+      await loadProperties();
+      await loadPayments();
+      await loadStatistics();
+    } catch (err: any) {
+      console.error("Error deleting property:", err);
+      toast.error(err.response?.data?.message || "Ошибка удаления объекта");
+    }
+  };
+
+  // Удаление платежа
+  const deletePayment = async (id: string) => {
+    if (!confirm("Вы уверены, что хотите удалить этот платеж?")) {
+      return;
+    }
+
+    try {
+      await apiService.deleteRentPayment(id);
+      toast.success("Платеж удален");
+      addNotification({ message: "Платеж удален", type: "info" });
+      await loadPayments();
+      await loadStatistics();
+    } catch (err: any) {
+      console.error("Error deleting payment:", err);
+      toast.error(err.response?.data?.message || "Ошибка удаления платежа");
+    }
+  };
+
+  // Сброс формы объекта недвижимости
+  const resetPropertyForm = () => {
+    setUtilityItems([{ name: "", amount: 0 }]);
+    setSelectedUtilitiesType("variable");
+    setEditingProperty(null);
+  };
+
+  // Сброс формы платежа
+  const resetPaymentForm = () => {
+    setSelectedPropertyId("");
+    setReceiptFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   // Скачивание квитанции
@@ -139,118 +345,102 @@ function Rent() {
     window.open(payment.receiptFile, "_blank");
   };
 
-  // Обработчики форм
-  const handlePropertySubmit = (formData: FormData) => {
-    const utilitiesType = formData.get("utilitiesType") as "included" | "fixed" | "variable";
-    
-    // Рассчитываем общую сумму коммунальных платежей если тип "fixed"
-    let totalUtilitiesAmount = 0;
-    if (utilitiesType === "fixed") {
-      totalUtilitiesAmount = utilityItems.reduce((sum, item) => sum + (item.amount || 0), 0);
-    }
-    
-    const propertyData: RentProperty = {
-      id: editingProperty?.id || Date.now().toString(),
-      address: formData.get("address") as string,
-      ownerName: formData.get("ownerName") as string,
-      rentAmount: parseFloat(formData.get("rentAmount") as string),
-      deposit: parseFloat(formData.get("deposit") as string),
-      startDate: formData.get("startDate") as string,
-      endDate: formData.get("endDate") as string || undefined,
-      status: "active" as const,
-      utilitiesIncluded: utilitiesType === "included",
-      utilitiesType: utilitiesType,
-      utilities: utilitiesType === "fixed" ? utilityItems.filter(item => item.name && item.amount > 0) : undefined,
-      utilitiesAmount: utilitiesType === "fixed" ? totalUtilitiesAmount : undefined,
-      description: formData.get("description") as string || undefined,
-      tenants: []
-    };
-
-    if (editingProperty) {
-      setProperties(prev => prev.map(property => property.id === editingProperty.id ? propertyData : property));
-      addNotification({ message: "Объект недвижимости обновлен", type: "success" });
-    } else {
-      setProperties(prev => [...prev, propertyData]);
-      addNotification({ message: "Объект недвижимости добавлен", type: "success" });
-    }
-
-    setIsPropertyDialogOpen(false);
-    setEditingProperty(null);
-    // Сбросить utility items
-    setUtilityItems([{ id: Date.now().toString(), name: "", amount: 0 }]);
-    setSelectedUtilitiesType("variable");
-  };
-
-  const handlePaymentSubmit = (formData: FormData) => {
-    const paymentData: RentPayment = {
-      id: Date.now().toString(),
-      propertyId: selectedPropertyId,
-      amount: parseFloat(formData.get("amount") as string),
-      paymentDate: formData.get("paymentDate") as string,
-      status: "paid" as const,
-      paymentType: formData.get("paymentType") as "rent" | "utilities",
-      notes: formData.get("notes") as string || undefined,
-      receiptFile: receiptFile?.data,
-      receiptFileName: receiptFile?.name
-    };
-
-    setPayments(prev => [...prev, paymentData]);
-    
-    addNotification({ 
-      message: "Платеж добавлен успешно", 
-      type: "success" 
-    });
-
-    setIsPaymentDialogOpen(false);
-    setSelectedPropertyId("");
-    setReceiptFile(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const deleteProperty = (id: string) => {
-    setProperties(prev => prev.filter(property => property.id !== id));
-    setPayments(prev => prev.filter(payment => payment.propertyId !== id));
-    addNotification({ message: "Объект недвижимости удален", type: "info" });
-  };
-
-  const deletePayment = (id: string) => {
-    setPayments(prev => prev.filter(payment => payment.id !== id));
-    addNotification({ message: "Платеж удален", type: "info" });
-  };
-
   // Функции для работы с коммунальными услугами
   const addUtilityItem = () => {
-    setUtilityItems([...utilityItems, { id: Date.now().toString(), name: "", amount: 0 }]);
+    setUtilityItems([...utilityItems, { name: "", amount: 0 }]);
   };
 
-  const removeUtilityItem = (id: string) => {
+  const removeUtilityItem = (index: number) => {
     if (utilityItems.length > 1) {
-      setUtilityItems(utilityItems.filter(item => item.id !== id));
+      setUtilityItems(utilityItems.filter((_, i) => i !== index));
     }
   };
 
-  const updateUtilityItem = (id: string, field: 'name' | 'amount', value: string | number) => {
-    setUtilityItems(utilityItems.map(item => 
-      item.id === id ? { ...item, [field]: value } : item
-    ));
+  const updateUtilityItem = (index: number, field: 'name' | 'amount', value: string | number) => {
+    const updated = [...utilityItems];
+    if (field === 'name') {
+      updated[index].name = value as string;
+    } else {
+      updated[index].amount = typeof value === 'number' ? value : parseFloat(value as string) || 0;
+    }
+    setUtilityItems(updated);
   };
 
   // Эффект для инициализации utility items при редактировании
   useEffect(() => {
     if (editingProperty && isPropertyDialogOpen) {
       if (editingProperty.utilities && editingProperty.utilities.length > 0) {
-        setUtilityItems(editingProperty.utilities);
+        setUtilityItems(editingProperty.utilities.map(u => ({ name: u.name, amount: u.amount })));
       } else {
-        setUtilityItems([{ id: Date.now().toString(), name: "", amount: 0 }]);
+        setUtilityItems([{ name: "", amount: 0 }]);
       }
       setSelectedUtilitiesType(editingProperty.utilitiesType || "variable");
     } else if (!isPropertyDialogOpen) {
-      setUtilityItems([{ id: Date.now().toString(), name: "", amount: 0 }]);
-      setSelectedUtilitiesType("variable");
+      resetPropertyForm();
     }
   }, [editingProperty, isPropertyDialogOpen]);
+
+  // Расчет данных для графика
+  const getMonthlyExpenseData = () => {
+    if (statistics?.monthlyData) {
+      return statistics.monthlyData;
+    }
+
+    // Fallback: вычисляем из платежей если нет данных от сервера
+    const monthlyData = payments
+      .filter(p => p.status === "paid")
+      .reduce((acc, payment) => {
+        const date = new Date(payment.paymentDate);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        const monthName = date.toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
+
+        if (!acc[monthKey]) {
+          acc[monthKey] = { month: monthName, rent: 0, utilities: 0, total: 0 };
+        }
+
+        if (payment.paymentType === "utilities") {
+          acc[monthKey].utilities += payment.amount;
+        } else {
+          acc[monthKey].rent += payment.amount;
+        }
+        acc[monthKey].total += payment.amount;
+
+        return acc;
+      }, {} as Record<string, { month: string; rent: number; utilities: number; total: number }>);
+
+    return Object.values(monthlyData).sort((a, b) => {
+      const [aMonth, aYear] = a.month.split(" ");
+      const [bMonth, bYear] = b.month.split(" ");
+      return new Date(`${aYear}-${aMonth}-01`).getTime() - new Date(`${bYear}-${bMonth}-01`).getTime();
+    });
+  };
+
+  // Показываем индикатор загрузки
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">Загрузка данных...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Показываем ошибку
+  if (error && properties.length === 0) {
+    return (
+      <div className="space-y-4">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+        <Button onClick={loadData} variant="outline">
+          Повторить попытку
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -262,8 +452,8 @@ function Rent() {
               <DollarSign className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               <span className="text-sm text-blue-700 dark:text-blue-300">Затраты за месяц</span>
             </div>
-            <p className="text-2xl text-blue-900 dark:text-blue-100">
-              {getTotalRentExpense().toLocaleString("kk-KZ")} ₸
+            <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+              {(statistics?.totalExpenseThisMonth || 0).toLocaleString("ru-RU")} ₸
             </p>
           </CardContent>
         </Card>
@@ -274,8 +464,8 @@ function Rent() {
               <Building className="w-5 h-5 text-purple-600 dark:text-purple-400" />
               <span className="text-sm text-purple-700 dark:text-purple-300">Активных объектов</span>
             </div>
-            <p className="text-2xl text-purple-900 dark:text-purple-100">
-              {getActivePropertiesCount()}
+            <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">
+              {statistics?.activePropertiesCount || 0}
             </p>
           </CardContent>
         </Card>
@@ -286,8 +476,8 @@ function Rent() {
               <Calendar className="w-5 h-5 text-orange-600 dark:text-orange-400" />
               <span className="text-sm text-orange-700 dark:text-orange-300">Ожидающих оплаты</span>
             </div>
-            <p className="text-2xl text-orange-900 dark:text-orange-100">
-              {getPendingPaymentsCount()}
+            <p className="text-2xl font-bold text-orange-900 dark:text-orange-100">
+              {statistics?.pendingPaymentsCount || 0}
             </p>
           </CardContent>
         </Card>
@@ -298,8 +488,8 @@ function Rent() {
               <FileText className="w-5 h-5 text-green-600 dark:text-green-400" />
               <span className="text-sm text-green-700 dark:text-green-300">Предстоящий платеж</span>
             </div>
-            <p className="text-2xl text-green-900 dark:text-green-100">
-              {getUpcomingPaymentAmount().toLocaleString("kk-KZ")} ₸
+            <p className="text-2xl font-bold text-green-900 dark:text-green-100">
+              {(statistics?.upcomingPaymentAmount || 0).toLocaleString("ru-RU")} ₸
             </p>
           </CardContent>
         </Card>
@@ -324,175 +514,198 @@ function Rent() {
                     Добавить объект
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+                <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
-                    <DialogTitle>{editingProperty ? "Редактировать объект" : "Добавить объект аренды"}</DialogTitle>
+                    <DialogTitle>
+                      {editingProperty ? "Редактировать объект" : "Добавить объект аренды"}
+                    </DialogTitle>
                   </DialogHeader>
-                  <form onSubmit={(e) => { e.preventDefault(); handlePropertySubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
-                    <div>
-                      <Label htmlFor="address">Адрес объекта</Label>
-                      <Input 
-                        id="address" 
-                        name="address" 
-                        required 
-                        defaultValue={editingProperty?.address}
-                        placeholder="г. Алматы, ул. Абая 123, кв. 45"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="ownerName">Имя владельца/арендодателя</Label>
-                      <Input 
-                        id="ownerName" 
-                        name="ownerName" 
-                        required 
-                        defaultValue={editingProperty?.ownerName}
-                        placeholder="ФИО владельца"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="rentAmount">Арендная плата (₸)</Label>
-                      <Input 
-                        id="rentAmount" 
-                        name="rentAmount" 
-                        type="number" 
-                        step="0.01" 
-                        required 
-                        defaultValue={editingProperty?.rentAmount}
-                        placeholder="150000"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="deposit">Залог (₸)</Label>
-                      <Input 
-                        id="deposit" 
-                        name="deposit" 
-                        type="number" 
-                        step="0.01" 
-                        required 
-                        defaultValue={editingProperty?.deposit}
-                        placeholder="150000"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="startDate">Дата начала аренды</Label>
-                      <Input 
-                        id="startDate" 
-                        name="startDate" 
-                        type="date" 
-                        required 
-                        defaultValue={editingProperty?.startDate}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="endDate">Дата окончания аренды (опционально)</Label>
-                      <Input 
-                        id="endDate" 
-                        name="endDate" 
-                        type="date" 
-                        defaultValue={editingProperty?.endDate}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="utilitiesType">Коммунальные платежи</Label>
-                      <Select 
-                        name="utilitiesType" 
-                        value={selectedUtilitiesType}
-                        onValueChange={(value: "included" | "fixed" | "variable") => {
-                          setSelectedUtilitiesType(value);
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Выберите тип" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="included">Включены в аренду</SelectItem>
-                          <SelectItem value="fixed">Фиксированная сумма</SelectItem>
-                          <SelectItem value="variable">Переменная (по счетчикам)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    {selectedUtilitiesType === "fixed" && (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <Label>Коммунальные услуги</Label>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={addUtilityItem}
-                          >
-                            <Plus className="w-3 h-3 mr-1" />
-                            Добавить услугу
-                          </Button>
-                        </div>
-                        
-                        {utilityItems.map((item, index) => (
-                          <div key={item.id} className="flex gap-2 items-start">
-                            <div className="flex-1">
-                              <Input
-                                placeholder="Наименование (например, Электричество)"
-                                value={item.name}
-                                onChange={(e) => updateUtilityItem(item.id, 'name', e.target.value)}
-                              />
-                            </div>
-                            <div className="w-32">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                placeholder="Сумма"
-                                value={item.amount || ''}
-                                onChange={(e) => updateUtilityItem(item.id, 'amount', parseFloat(e.target.value) || 0)}
-                              />
-                            </div>
+
+                  <form onSubmit={handlePropertySubmit} className="space-y-4">
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="address">Адрес объекта *</Label>
+                        <Input
+                          id="address"
+                          name="address"
+                          required
+                          defaultValue={editingProperty?.address}
+                          placeholder="г. Алматы, ул. Абая 123, кв. 45"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="ownerName">Имя владельца/арендодателя *</Label>
+                        <Input
+                          id="ownerName"
+                          name="ownerName"
+                          required
+                          defaultValue={editingProperty?.ownerName}
+                          placeholder="ФИО владельца"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="rentAmount">Арендная плата (₸) *</Label>
+                        <Input
+                          id="rentAmount"
+                          name="rentAmount"
+                          type="number"
+                          step="0.01"
+                          required
+                          defaultValue={editingProperty?.rentAmount}
+                          placeholder="150000"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="deposit">Залог (₸) *</Label>
+                        <Input
+                          id="deposit"
+                          name="deposit"
+                          type="number"
+                          step="0.01"
+                          required
+                          defaultValue={editingProperty?.deposit}
+                          placeholder="150000"
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="startDate">Дата начала аренды *</Label>
+                        <Input
+                          id="startDate"
+                          name="startDate"
+                          type="date"
+                          required
+                          defaultValue={editingProperty?.startDate?.split('T')[0]}
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="endDate">Дата окончания аренды</Label>
+                        <Input
+                          id="endDate"
+                          name="endDate"
+                          type="date"
+                          defaultValue={editingProperty?.endDate?.split('T')[0]}
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="utilitiesType">Коммунальные платежи *</Label>
+                        <Select
+                          name="utilitiesType"
+                          value={selectedUtilitiesType}
+                          onValueChange={(value: "included" | "fixed" | "variable") => {
+                            setSelectedUtilitiesType(value);
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Выберите тип" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="included">Включены в аренду</SelectItem>
+                            <SelectItem value="fixed">Фиксированная сумма</SelectItem>
+                            <SelectItem value="variable">Переменная (по счетчикам)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {selectedUtilitiesType === "fixed" && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Label>Коммунальные услуги</Label>
                             <Button
                               type="button"
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
-                              onClick={() => removeUtilityItem(item.id)}
-                              disabled={utilityItems.length === 1}
+                              onClick={addUtilityItem}
                             >
-                              <X className="w-4 h-4" />
+                              <Plus className="w-3 h-3 mr-1" />
+                              Добавить услугу
                             </Button>
                           </div>
-                        ))}
-                        
-                        {utilityItems.length > 0 && (
-                          <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                            <span className="text-sm">Итого коммунальные платежи:</span>
-                            <span>{utilityItems.reduce((sum, item) => sum + (item.amount || 0), 0).toLocaleString("kk-KZ")} ₸</span>
-                          </div>
-                        )}
+
+                          {utilityItems.map((item, index) => (
+                            <div key={index} className="flex gap-2 items-start">
+                              <div className="flex-1">
+                                <Input
+                                  placeholder="Наименование (например, Электричество)"
+                                  value={item.name}
+                                  onChange={(e) => updateUtilityItem(index, 'name', e.target.value)}
+                                />
+                              </div>
+                              <div className="w-32">
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="Сумма"
+                                  value={item.amount || ''}
+                                  onChange={(e) => updateUtilityItem(index, 'amount', e.target.value)}
+                                />
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeUtilityItem(index)}
+                                disabled={utilityItems.length === 1}
+                              >
+                                <X className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          ))}
+
+                          {utilityItems.length > 0 && (
+                            <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                              <span className="text-sm font-medium">Итого коммунальные платежи:</span>
+                              <span className="font-bold">
+                                {utilityItems.reduce((sum, item) => sum + (item.amount || 0), 0).toLocaleString("ru-RU")} ₸
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div>
+                        <Label htmlFor="description">Описание/Примечания</Label>
+                        <Textarea
+                          id="description"
+                          name="description"
+                          defaultValue={editingProperty?.description}
+                          placeholder="Дополнительная информация об объекте"
+                          rows={3}
+                        />
                       </div>
-                    )}
-                    
-                    <div>
-                      <Label htmlFor="description">Описание/Примечания</Label>
-                      <Textarea 
-                        id="description" 
-                        name="description" 
-                        defaultValue={editingProperty?.description}
-                        placeholder="Дополнительная информация об объекте"
-                        rows={3}
-                      />
                     </div>
-                    <div className="flex gap-2">
-                      <Button type="submit" className="flex-1">
-                        {editingProperty ? "Обновить" : "Добавить"}
+
+                    <div className="flex gap-2 pt-4">
+                      <Button type="submit" className="flex-1" disabled={submitting}>
+                        {submitting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Сохранение...
+                          </>
+                        ) : (
+                          editingProperty ? "Обновить" : "Добавить"
+                        )}
                       </Button>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
+                      <Button
+                        type="button"
+                        variant="outline"
                         onClick={() => {
                           setIsPropertyDialogOpen(false);
                           setEditingProperty(null);
                         }}
+                        disabled={submitting}
                       >
                         Отмена
                       </Button>
                     </div>
                   </form>
                 </DialogContent>
+
               </Dialog>
             </CardHeader>
             <CardContent>
@@ -500,7 +713,7 @@ function Rent() {
                 {properties.length === 0 ? (
                   <div className="text-center py-12">
                     <Building className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="mb-2">Нет объектов аренды</h3>
+                    <h3 className="text-lg font-semibold mb-2">Нет объектов аренды</h3>
                     <p className="text-sm text-muted-foreground mb-4">
                       Добавьте информацию о вашей квартире или доме
                     </p>
@@ -511,13 +724,13 @@ function Rent() {
                   </div>
                 ) : (
                   properties.map(property => (
-                    <div key={property.id} className="p-6 border rounded-xl hover:shadow-md transition-shadow">
+                    <div key={property._id} className="p-6 border rounded-xl hover:shadow-md transition-shadow">
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
-                            <h3>{property.address}</h3>
+                            <h3 className="text-lg font-semibold">{property.address}</h3>
                             <Badge variant={property.status === "active" ? "default" : "secondary"}>
-                              {property.status === "active" ? "Активный" : "Завершен"}
+                              {property.status === "active" ? "Активный" : property.status === "completed" ? "Завершен" : "Отменен"}
                             </Badge>
                           </div>
                           <p className="text-sm text-muted-foreground">
@@ -538,11 +751,7 @@ function Rent() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => {
-                              if (confirm("Вы уверены, что хотите удалить этот объект?")) {
-                                deleteProperty(property.id);
-                              }
-                            }}
+                            onClick={() => deleteProperty(property._id)}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -554,37 +763,37 @@ function Rent() {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
                           <p className="text-sm text-muted-foreground mb-1">Арендная плата</p>
-                          <p className="text-xl">{property.rentAmount.toLocaleString("kk-KZ")} ₸</p>
+                          <p className="text-xl font-semibold">{property.rentAmount.toLocaleString("ru-RU")} ₸</p>
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground mb-1">Залог</p>
-                          <p className="text-xl">{property.deposit.toLocaleString("kk-KZ")} ₸</p>
+                          <p className="text-xl font-semibold">{property.deposit.toLocaleString("ru-RU")} ₸</p>
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground mb-1">Коммунальные платежи</p>
-                          <p className="text-xl">
-                            {property.utilitiesType === "included" ? "Включены" : 
-                             property.utilitiesType === "fixed" ? `${property.utilitiesAmount?.toLocaleString("kk-KZ")} ₸` : 
-                             "По счетчикам"}
+                          <p className="text-xl font-semibold">
+                            {property.utilitiesType === "included" ? "Включены" :
+                              property.utilitiesType === "fixed" ? `${property.utilitiesAmount?.toLocaleString("ru-RU")} ₸` :
+                                "По счетчикам"}
                           </p>
                         </div>
                       </div>
 
                       {property.utilitiesType === "fixed" && property.utilities && property.utilities.length > 0 && (
                         <div className="mb-4 p-4 bg-muted/50 rounded-lg">
-                          <p className="text-sm text-muted-foreground mb-2">Детализация коммунальных услуг:</p>
+                          <p className="text-sm font-medium text-muted-foreground mb-2">Детализация коммунальных услуг:</p>
                           <div className="space-y-1">
                             {property.utilities.map((utility) => (
-                              <div key={utility.id} className="flex justify-between text-sm">
+                              <div key={utility._id} className="flex justify-between text-sm">
                                 <span>{utility.name}</span>
-                                <span>{utility.amount.toLocaleString("kk-KZ")} ₸</span>
+                                <span className="font-medium">{utility.amount.toLocaleString("ru-RU")} ₸</span>
                               </div>
                             ))}
                             <Separator className="my-2" />
-                            <div className="flex justify-between">
+                            <div className="flex justify-between font-semibold">
                               <span>Итого с коммуналкой:</span>
                               <span className="text-lg">
-                                {(property.rentAmount + (property.utilitiesAmount || 0)).toLocaleString("kk-KZ")} ₸
+                                {(property.rentAmount + (property.utilitiesAmount || 0)).toLocaleString("ru-RU")} ₸
                               </span>
                             </div>
                           </div>
@@ -600,13 +809,13 @@ function Rent() {
 
                       <div className="flex items-center justify-between text-sm pt-4 border-t">
                         <span className="text-muted-foreground">
-                          {new Date(property.startDate).toLocaleDateString("ru-RU")} - 
+                          {new Date(property.startDate).toLocaleDateString("ru-RU")} -
                           {property.endDate ? ` ${new Date(property.endDate).toLocaleDateString("ru-RU")}` : " Бессрочно"}
                         </span>
                         <Button
                           size="sm"
                           onClick={() => {
-                            setSelectedPropertyId(property.id);
+                            setSelectedPropertyId(property._id);
                             setIsPaymentDialogOpen(true);
                           }}
                         >
@@ -625,20 +834,16 @@ function Rent() {
           <Dialog open={isPaymentDialogOpen} onOpenChange={(open) => {
             setIsPaymentDialogOpen(open);
             if (!open) {
-              setSelectedPropertyId("");
-              setReceiptFile(null);
-              if (fileInputRef.current) {
-                fileInputRef.current.value = "";
-              }
+              resetPaymentForm();
             }
           }}>
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>Добавить платеж</DialogTitle>
               </DialogHeader>
-              <form onSubmit={(e) => { e.preventDefault(); handlePaymentSubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
+              <form onSubmit={handlePaymentSubmit} className="space-y-4">
                 <div>
-                  <Label htmlFor="paymentType">Тип платежа</Label>
+                  <Label htmlFor="paymentType">Тип платежа *</Label>
                   <Select name="paymentType" defaultValue="rent">
                     <SelectTrigger>
                       <SelectValue />
@@ -646,27 +851,29 @@ function Rent() {
                     <SelectContent>
                       <SelectItem value="rent">Аренда</SelectItem>
                       <SelectItem value="utilities">Коммунальные платежи</SelectItem>
+                      <SelectItem value="deposit">Залог</SelectItem>
+                      <SelectItem value="other">Другое</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="amount">Сумма платежа (₸)</Label>
-                  <Input 
-                    id="amount" 
-                    name="amount" 
-                    type="number" 
-                    step="0.01" 
-                    required 
+                  <Label htmlFor="amount">Сумма платежа (₸) *</Label>
+                  <Input
+                    id="amount"
+                    name="amount"
+                    type="number"
+                    step="0.01"
+                    required
                     placeholder="150000"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="paymentDate">Дата платежа</Label>
-                  <Input 
-                    id="paymentDate" 
-                    name="paymentDate" 
-                    type="date" 
-                    required 
+                  <Label htmlFor="paymentDate">Дата платежа *</Label>
+                  <Input
+                    id="paymentDate"
+                    name="paymentDate"
+                    type="date"
+                    required
                     defaultValue={new Date().toISOString().split('T')[0]}
                   />
                 </div>
@@ -694,28 +901,32 @@ function Rent() {
                 </div>
                 <div>
                   <Label htmlFor="notes">Примечания</Label>
-                  <Textarea 
-                    id="notes" 
-                    name="notes" 
+                  <Textarea
+                    id="notes"
+                    name="notes"
                     placeholder="Дополнительная информация о платеже"
                     rows={3}
                   />
                 </div>
                 <div className="flex gap-2">
-                  <Button type="submit" className="flex-1">
-                    Добавить платеж
+                  <Button type="submit" className="flex-1" disabled={submitting}>
+                    {submitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Добавление...
+                      </>
+                    ) : (
+                      "Добавить платеж"
+                    )}
                   </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => {
                       setIsPaymentDialogOpen(false);
-                      setSelectedPropertyId("");
-                      setReceiptFile(null);
-                      if (fileInputRef.current) {
-                        fileInputRef.current.value = "";
-                      }
+                      resetPaymentForm();
                     }}
+                    disabled={submitting}
                   >
                     Отмена
                   </Button>
@@ -735,7 +946,7 @@ function Rent() {
                 {payments.length === 0 ? (
                   <div className="text-center py-12">
                     <FileText className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="mb-2">Нет платежей</h3>
+                    <h3 className="text-lg font-semibold mb-2">Нет платежей</h3>
                     <p className="text-sm text-muted-foreground">
                       Добавьте объект аренды и начните регистрировать платежи
                     </p>
@@ -744,29 +955,41 @@ function Rent() {
                   [...payments]
                     .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime())
                     .map(payment => {
-                      const property = properties.find(p => p.id === payment.propertyId);
-                      
+                      const property = properties.find(p => p._id === payment.propertyId);
+
                       return (
-                        <div key={payment.id} className="flex items-start justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
+                        <div key={payment._id} className="flex items-start justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h4>{property?.address || "Объект удален"}</h4>
-                              <Badge variant={payment.paymentType === "rent" ? "default" : "secondary"}>
-                                {payment.paymentType === "rent" ? "Аренда" : "Коммуналка"}
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              <h4 className="font-semibold">{property?.address || "Объект удален"}</h4>
+                              <Badge variant={
+                                payment.paymentType === "rent" ? "default" :
+                                  payment.paymentType === "utilities" ? "secondary" :
+                                    "outline"
+                              }>
+                                {payment.paymentType === "rent" ? "Аренда" :
+                                  payment.paymentType === "utilities" ? "Коммуналка" :
+                                    payment.paymentType === "deposit" ? "Залог" : "Другое"}
                               </Badge>
-                              <Badge variant={payment.status === "paid" ? "default" : "secondary"}>
-                                {payment.status === "paid" ? "Оплачено" : "Ожидает"}
+                              <Badge variant={
+                                payment.status === "paid" ? "default" :
+                                  payment.status === "pending" ? "secondary" :
+                                    payment.status === "overdue" ? "destructive" : "outline"
+                              }>
+                                {payment.status === "paid" ? "Оплачено" :
+                                  payment.status === "pending" ? "Ожидает" :
+                                    payment.status === "overdue" ? "Просрочено" : "Отменено"}
                               </Badge>
                             </div>
                             <p className="text-sm text-muted-foreground mb-2">
-                              {new Date(payment.paymentDate).toLocaleDateString("ru-RU", { 
-                                day: "numeric", 
-                                month: "long", 
-                                year: "numeric" 
+                              {new Date(payment.paymentDate).toLocaleDateString("ru-RU", {
+                                day: "numeric",
+                                month: "long",
+                                year: "numeric"
                               })}
                             </p>
                             {payment.notes && (
-                              <p className="text-sm text-muted-foreground">
+                              <p className="text-sm text-muted-foreground mb-2">
                                 {payment.notes}
                               </p>
                             )}
@@ -794,18 +1017,14 @@ function Rent() {
                               </div>
                             )}
                           </div>
-                          <div className="flex items-center gap-4">
-                            <span className="text-xl">
-                              {payment.amount.toLocaleString("kk-KZ")} ₸
+                          <div className="flex items-center gap-4 ml-4">
+                            <span className="text-xl font-bold whitespace-nowrap">
+                              {payment.amount.toLocaleString("ru-RU")} ₸
                             </span>
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => {
-                                if (confirm("Вы уверены, что хотите удалить этот платеж?")) {
-                                  deletePayment(payment.id);
-                                }
-                              }}
+                              onClick={() => deletePayment(payment._id)}
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -834,17 +1053,28 @@ function Rent() {
               ) : (
                 <div className="space-y-6">
                   <div>
-                    <h4 className="mb-4">Расходы по месяцам</h4>
-                    <ResponsiveContainer width="100%" height={300}>
+                    <h4 className="text-lg font-semibold mb-4">Расходы по месяцам</h4>
+                    <ResponsiveContainer width="100%" height={350}>
                       <BarChart data={getMonthlyExpenseData()}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="month" />
-                        <YAxis />
-                        <Tooltip 
-                          formatter={(value: number) => `${value.toLocaleString("kk-KZ")} ₸`}
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis
+                          dataKey="month"
+                          className="text-xs"
                         />
-                        <Bar dataKey="rent" fill="hsl(var(--chart-1))" name="Аренда" stackId="a" />
-                        <Bar dataKey="utilities" fill="hsl(var(--chart-2))" name="Коммуналка" stackId="a" />
+                        <YAxis
+                          className="text-xs"
+                        />
+                        <Tooltip
+                          formatter={(value: number) => `${value.toLocaleString("ru-RU")} ₸`}
+                          contentStyle={{
+                            borderRadius: '8px',
+                            border: '1px solid var(--border))',
+                            backgroundColor: 'var(--background)'
+                          }}
+                        />
+                        <Legend />
+                        <Bar dataKey="rent" fill="var(--chart-1)" name="Аренда" stackId="a" />
+                        <Bar dataKey="utilities" fill="var(--chart-2)" name="Коммуналка" stackId="a" />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -852,24 +1082,24 @@ function Rent() {
                   <Separator />
 
                   <div>
-                    <h4 className="mb-4">Детальная статистика</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <h4 className="text-lg font-semibold mb-4">Детальная статистика</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {getMonthlyExpenseData().map((data, index) => (
-                        <div key={index} className="p-4 border rounded-lg">
-                          <p className="text-sm text-muted-foreground mb-2">{data.month}</p>
-                          <div className="space-y-1">
-                            <div className="flex justify-between">
+                        <div key={index} className="p-4 border rounded-lg hover:shadow-sm transition-shadow">
+                          <p className="text-sm font-medium text-muted-foreground mb-3">{data.month}</p>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
                               <span className="text-sm">Аренда:</span>
-                              <span className="text-sm">{data.rent.toLocaleString("kk-KZ")} ₸</span>
+                              <span className="text-sm font-medium">{data.rent.toLocaleString("ru-RU")} ₸</span>
                             </div>
-                            <div className="flex justify-between">
+                            <div className="flex justify-between items-center">
                               <span className="text-sm">Коммуналка:</span>
-                              <span className="text-sm">{data.utilities.toLocaleString("kk-KZ")} ₸</span>
+                              <span className="text-sm font-medium">{data.utilities.toLocaleString("ru-RU")} ₸</span>
                             </div>
                             <Separator className="my-2" />
-                            <div className="flex justify-between">
-                              <span>Итого:</span>
-                              <span>{data.total.toLocaleString("kk-KZ")} ₸</span>
+                            <div className="flex justify-between items-center">
+                              <span className="font-semibold">Итого:</span>
+                              <span className="font-bold text-lg">{data.total.toLocaleString("ru-RU")} ₸</span>
                             </div>
                           </div>
                         </div>

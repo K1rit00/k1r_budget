@@ -522,6 +522,209 @@ exports.validateRegister = (req, res, next) => {
   next();
 };
 
+// Валидация объекта недвижимости (Property)
+exports.validateRentProperty = (req, res, next) => {
+  const { address, ownerName, rentAmount, deposit, startDate, endDate, utilitiesType } = req.body;
+  const errors = [];
+
+  // Проверка адреса
+  if (!address || address.trim() === '') {
+    errors.push('Адрес обязателен');
+  } else if (address.length < 5 || address.length > 200) {
+    errors.push('Адрес должен быть от 5 до 200 символов');
+  }
+
+  // Проверка имени владельца
+  if (!ownerName || ownerName.trim() === '') {
+    errors.push('Имя владельца обязательно');
+  } else if (ownerName.length < 2 || ownerName.length > 100) {
+    errors.push('Имя владельца должно быть от 2 до 100 символов');
+  }
+
+  // Проверка арендной платы
+  if (!rentAmount) {
+    errors.push('Арендная плата обязательна');
+  } else {
+    const amount = parseFloat(rentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      errors.push('Арендная плата должна быть положительным числом');
+    }
+    if (amount > 999999999) {
+      errors.push('Арендная плата слишком большая');
+    }
+  }
+
+  // Проверка залога
+  if (!deposit && deposit !== 0) {
+    errors.push('Залог обязателен');
+  } else {
+    const depositAmount = parseFloat(deposit);
+    if (isNaN(depositAmount) || depositAmount < 0) {
+      errors.push('Залог должен быть положительным числом или нулем');
+    }
+    if (depositAmount > 999999999) {
+      errors.push('Залог слишком большой');
+    }
+  }
+
+  // Проверка даты начала
+  if (!startDate) {
+    errors.push('Дата начала аренды обязательна');
+  } else {
+    const start = new Date(startDate);
+    if (isNaN(start.getTime())) {
+      errors.push('Некорректная дата начала аренды');
+    }
+  }
+
+  // Проверка даты окончания
+  if (endDate) {
+    const end = new Date(endDate);
+    if (isNaN(end.getTime())) {
+      errors.push('Некорректная дата окончания аренды');
+    }
+
+    if (startDate) {
+      const start = new Date(startDate);
+      if (end <= start) {
+        errors.push('Дата окончания должна быть после даты начала');
+      }
+    }
+  }
+
+  // Проверка типа коммунальных платежей
+  const validUtilitiesTypes = ['included', 'fixed', 'variable'];
+  if (utilitiesType && !validUtilitiesTypes.includes(utilitiesType)) {
+    errors.push('Недопустимый тип коммунальных платежей');
+  }
+
+  // Проверка коммунальных услуг (если тип fixed)
+  if (utilitiesType === 'fixed' && req.body.utilities) {
+    if (!Array.isArray(req.body.utilities)) {
+      errors.push('Коммунальные услуги должны быть массивом');
+    } else {
+      req.body.utilities.forEach((utility, index) => {
+        if (!utility.name || utility.name.trim() === '') {
+          errors.push(`Название услуги #${index + 1} обязательно`);
+        }
+        if (!utility.amount || isNaN(parseFloat(utility.amount)) || parseFloat(utility.amount) <= 0) {
+          errors.push(`Сумма услуги #${index + 1} должна быть положительным числом`);
+        }
+      });
+    }
+  }
+
+  // Проверка общей суммы коммунальных платежей
+  if (req.body.utilitiesAmount !== undefined && req.body.utilitiesAmount !== null) {
+    const utilitiesAmount = parseFloat(req.body.utilitiesAmount);
+    if (isNaN(utilitiesAmount) || utilitiesAmount < 0) {
+      errors.push('Общая сумма коммунальных платежей должна быть положительным числом');
+    }
+  }
+
+  // Проверка описания
+  if (req.body.description && req.body.description.length > 1000) {
+    errors.push('Описание не может быть длиннее 1000 символов');
+  }
+
+  // Проверка статуса
+  const validStatuses = ['active', 'completed', 'cancelled'];
+  if (req.body.status && !validStatuses.includes(req.body.status)) {
+    errors.push('Недопустимый статус объекта');
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Ошибка валидации',
+      errors
+    });
+  }
+
+  next();
+};
+
+// Валидация платежа по аренде
+exports.validateRentPayment = (req, res, next) => {
+  const { propertyId, amount, paymentDate, paymentType } = req.body;
+  const errors = [];
+
+  // Проверка ID объекта недвижимости
+  if (!propertyId || propertyId.trim() === '') {
+    errors.push('ID объекта недвижимости обязателен');
+  } else if (!/^[0-9a-fA-F]{24}$/.test(propertyId)) {
+    errors.push('Некорректный ID объекта недвижимости');
+  }
+
+  // Проверка суммы платежа
+  if (!amount) {
+    errors.push('Сумма платежа обязательна');
+  } else {
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      errors.push('Сумма платежа должна быть положительным числом');
+    }
+    if (amountNum > 999999999) {
+      errors.push('Сумма платежа слишком большая');
+    }
+  }
+
+  // Проверка даты платежа
+  if (!paymentDate) {
+    errors.push('Дата платежа обязательна');
+  } else {
+    const date = new Date(paymentDate);
+    if (isNaN(date.getTime())) {
+      errors.push('Некорректная дата платежа');
+    }
+  }
+
+  // Проверка типа платежа
+  const validPaymentTypes = ['rent', 'utilities', 'deposit', 'other'];
+  if (!paymentType) {
+    errors.push('Тип платежа обязателен');
+  } else if (!validPaymentTypes.includes(paymentType)) {
+    errors.push('Недопустимый тип платежа');
+  }
+
+  // Проверка статуса платежа
+  const validStatuses = ['paid', 'pending', 'overdue', 'cancelled'];
+  if (req.body.status && !validStatuses.includes(req.body.status)) {
+    errors.push('Недопустимый статус платежа');
+  }
+
+  // Проверка примечаний
+  if (req.body.notes && req.body.notes.length > 500) {
+    errors.push('Примечания не могут быть длиннее 500 символов');
+  }
+
+  // Проверка файла квитанции
+  if (req.body.receiptFile) {
+    if (typeof req.body.receiptFile !== 'string') {
+      errors.push('Файл квитанции должен быть строкой в формате Base64');
+    } else if (!req.body.receiptFile.startsWith('data:')) {
+      errors.push('Файл квитанции должен быть в формате Data URL');
+    } else if (req.body.receiptFile.length > 7000000) {
+      errors.push('Размер файла квитанции не должен превышать 5MB');
+    }
+  }
+
+  // Проверка имени файла квитанции
+  if (req.body.receiptFileName && req.body.receiptFileName.length > 255) {
+    errors.push('Имя файла квитанции не может быть длиннее 255 символов');
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Ошибка валидации',
+      errors
+    });
+  }
+
+  next();
+};
+
 // Валидация логина пользователя
 exports.validateLogin = (req, res, next) => {
   const { login, password } = req.body;

@@ -4,15 +4,17 @@ const router = express.Router();
 const authRoutes = require('./auth');
 const expenseRoutes = require('./expenses');
 const incomeRoutes = require('./income');
-const recurringIncomeRoutes = require('./recurringIncome'); // ← Добавьте
+const recurringIncomeRoutes = require('./recurringIncome');
 const categoryRoutes = require('./categories');
+const rentRoutes = require('./rent'); // ← Добавьте
 
 // Mount routes
 router.use('/auth', authRoutes);
 router.use('/expenses', expenseRoutes);
 router.use('/income', incomeRoutes);
-router.use('/recurring-income', recurringIncomeRoutes); // ← Добавьте
+router.use('/recurring-income', recurringIncomeRoutes);
 router.use('/categories', categoryRoutes);
+router.use('/rent', rentRoutes); // ← Добавьте
 
 // API info
 router.get('/', (req, res) => {
@@ -24,8 +26,9 @@ router.get('/', (req, res) => {
       auth: '/auth',
       expenses: '/expenses',
       income: '/income',
-      recurringIncome: '/recurring-income', // ← Добавьте в документацию
-      categories: '/categories'
+      recurringIncome: '/recurring-income',
+      categories: '/categories',
+      rent: '/rent' // ← Добавьте в документацию
     }
   });
 });

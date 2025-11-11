@@ -352,6 +352,93 @@ export const apiService = {
     const response = await api.delete(`/utilities/${id}`);
     return response.data;
   },
+
+  // Rent Properties
+  getRentProperties: async (params?: { status?: string; startDate?: string; endDate?: string }) => {
+    const response = await api.get('/rent', { params });
+    return response.data;
+  },
+
+  getRentProperty: async (id: string) => {
+    const response = await api.get(`/rent/${id}`);
+    return response.data;
+  },
+
+  createRentProperty: async (data: {
+    address: string;
+    ownerName: string;
+    rentAmount: number;
+    deposit: number;
+    startDate: string;
+    endDate?: string;
+    status?: 'active' | 'completed' | 'cancelled';
+    utilitiesIncluded?: boolean;
+    utilitiesType?: 'included' | 'fixed' | 'variable';
+    utilities?: Array<{ name: string; amount: number }>;
+    utilitiesAmount?: number;
+    description?: string;
+    tenants?: string[];
+  }) => {
+    const response = await api.post('/rent', data);
+    return response.data;
+  },
+
+  updateRentProperty: async (id: string, data: any) => {
+    const response = await api.put(`/rent/${id}`, data);
+    return response.data;
+  },
+
+  deleteRentProperty: async (id: string) => {
+    const response = await api.delete(`/rent/${id}`);
+    return response.data;
+  },
+
+  // Rent Payments
+  getRentPayments: async (params?: {
+    propertyId?: string;
+    status?: string;
+    paymentType?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const response = await api.get('/rent/payments', { params });
+    return response.data;
+  },
+
+  getRentPayment: async (id: string) => {
+    const response = await api.get(`/rent/payments/${id}`);
+    return response.data;
+  },
+
+  createRentPayment: async (data: {
+    propertyId: string;
+    amount: number;
+    paymentDate: string;
+    status?: 'paid' | 'pending' | 'overdue' | 'cancelled';
+    paymentType: 'rent' | 'utilities' | 'deposit' | 'other';
+    notes?: string;
+    receiptFile?: string;
+    receiptFileName?: string;
+  }) => {
+    const response = await api.post('/rent/payments', data);
+    return response.data;
+  },
+
+  updateRentPayment: async (id: string, data: any) => {
+    const response = await api.put(`/rent/payments/${id}`, data);
+    return response.data;
+  },
+
+  deleteRentPayment: async (id: string) => {
+    const response = await api.delete(`/rent/payments/${id}`);
+    return response.data;
+  },
+
+  // Rent Statistics
+  getRentStatistics: async (params?: { startDate?: string; endDate?: string }) => {
+    const response = await api.get('/rent/statistics', { params });
+    return response.data;
+  },
 };
 
 export default api;
