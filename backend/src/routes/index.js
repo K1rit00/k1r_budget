@@ -6,6 +6,7 @@ const expenseRoutes = require('./expenses');
 const incomeRoutes = require('./income');
 const recurringIncomeRoutes = require('./recurringIncome');
 const categoryRoutes = require('./categories');
+const depositRoutes = require('./deposits');
 const rentRoutes = require('./rent'); // ← Добавьте
 
 // Mount routes
@@ -15,6 +16,7 @@ router.use('/income', incomeRoutes);
 router.use('/recurring-income', recurringIncomeRoutes);
 router.use('/categories', categoryRoutes);
 router.use('/rent', rentRoutes); // ← Добавьте
+router.use('/deposits', depositRoutes);
 
 // API info
 router.get('/', (req, res) => {

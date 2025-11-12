@@ -217,10 +217,10 @@ export interface Deposit {
   accountNumber?: string;
   amount: number;
   currentBalance: number;
-  interestRate?: number;
-  startDate?: string;
-  endDate?: string;
-  type: "fixed" | "savings" | "investment" | "spending";
+  interestRate?: number;  // Оставлено optional, но в коде добавьте проверки
+  startDate?: string;     // Оставлено optional, но в коде добавьте проверки
+  endDate?: string;       // Оставлено optional, но в коде добавьте проверки
+  type: "fixed" | "savings" | "investment" | "spending";  // "spending" оставлен; если не нужен, удалите
   autoRenewal?: boolean;
   isActive: boolean;
   status?: "active" | "matured" | "closed";
@@ -234,6 +234,7 @@ export interface DepositTransaction {
   amount: number;
   transactionDate: string;
   description?: string;
+  incomeId?: string;  // Добавлено для исправления ошибки
 }
 
 export interface IncomeStream {

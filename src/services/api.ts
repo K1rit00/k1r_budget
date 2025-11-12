@@ -269,27 +269,6 @@ export const apiService = {
     return response.data;
   },
 
-  // Deposits
-  getDeposits: async () => {
-    const response = await api.get('/deposits');
-    return response.data;
-  },
-
-  createDeposit: async (data: any) => {
-    const response = await api.post('/deposits', data);
-    return response.data;
-  },
-
-  updateDeposit: async (id: string, data: any) => {
-    const response = await api.put(`/deposits/${id}`, data);
-    return response.data;
-  },
-
-  deleteDeposit: async (id: string) => {
-    const response = await api.delete(`/deposits/${id}`);
-    return response.data;
-  },
-
   // Monthly Expenses
   getMonthlyExpenses: async () => {
     const response = await api.get('/monthly-expenses');
@@ -437,6 +416,78 @@ export const apiService = {
   // Rent Statistics
   getRentStatistics: async (params?: { startDate?: string; endDate?: string }) => {
     const response = await api.get('/rent/statistics', { params });
+    return response.data;
+  },
+
+  // Deposits
+  getDeposits: async (params?: { status?: string; type?: string }) => {
+    const response = await api.get('/deposits', { params });
+    return response.data;
+  },
+
+  getDeposit: async (id: string) => {
+    const response = await api.get(`/deposits/${id}`);
+    return response.data;
+  },
+
+  createDeposit: async (data: any) => {
+    const response = await api.post('/deposits', data);
+    return response.data;
+  },
+
+  updateDeposit: async (id: string, data: any) => {
+    const response = await api.put(`/deposits/${id}`, data);
+    return response.data;
+  },
+
+  deleteDeposit: async (id: string) => {
+    const response = await api.delete(`/deposits/${id}`);
+    return response.data;
+  },
+
+  closeDeposit: async (id: string) => {
+    const response = await api.patch(`/deposits/${id}/close`);
+    return response.data;
+  },
+
+  renewDeposit: async (id: string) => {
+    const response = await api.patch(`/deposits/${id}/renew`);
+    return response.data;
+  },
+
+  // Deposit Transactions
+  getDepositTransactions: async (params?: {
+    depositId?: string;
+    type?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const response = await api.get('/deposits/transactions', { params });
+    return response.data;
+  },
+
+  getDepositTransaction: async (id: string) => {
+    const response = await api.get(`/deposits/transactions/${id}`);
+    return response.data;
+  },
+
+  createDepositTransaction: async (data: any) => {
+    const response = await api.post('/deposits/transactions', data);
+    return response.data;
+  },
+
+  updateDepositTransaction: async (id: string, data: any) => {
+    const response = await api.put(`/deposits/transactions/${id}`, data);
+    return response.data;
+  },
+
+  deleteDepositTransaction: async (id: string) => {
+    const response = await api.delete(`/deposits/transactions/${id}`);
+    return response.data;
+  },
+
+  getDepositStatistics: async (params?: { startDate?: string; endDate?: string }) => {
+    const response = await api.get('/deposits/statistics', { params });
     return response.data;
   },
 };

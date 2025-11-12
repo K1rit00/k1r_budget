@@ -10,53 +10,88 @@ import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Badge } from "./ui/badge";
-import { Progress } from "./ui/progress";
-import { Separator } from "./ui/separator";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LineChart, Line, Tooltip, Legend, PieChart, Pie, Cell } from "recharts";
 import { useAppActions } from "../contexts/AppContext";
-import { useLocalStorage } from "../hooks/useLocalStorage";
-import type { Deposit, DepositTransaction } from "../types";
+import { apiService } from "../services/api";
+import type { Deposit, DepositTransaction, Income } from "../types";
+
+interface Bank {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+interface DepositStatistics {
+  totalBalance: number;
+  totalInterestEarned: number;
+  activeDepositsCount: number;
+  maturedDepositsCount: number;
+}
 
 function Deposits() {
   const { addNotification } = useAppActions();
-  const [deposits, setDeposits] = useLocalStorage<Deposit[]>("deposits", []);
-  const [transactions, setTransactions] = useLocalStorage<DepositTransaction[]>("deposit-transactions", []);
+  const [deposits, setDeposits] = useState<Deposit[]>([]);
+  const [transactions, setTransactions] = useState<DepositTransaction[]>([]);
+  const [incomes, setIncomes] = useState<Income[]>([]);
+  const [statistics, setStatistics] = useState<DepositStatistics>({
+    totalBalance: 0,
+    totalInterestEarned: 0,
+    activeDepositsCount: 0,
+    maturedDepositsCount: 0
+  });
+  const [loading, setLoading] = useState(true);
   
   const [isDepositDialogOpen, setIsDepositDialogOpen] = useState(false);
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
   const [editingDeposit, setEditingDeposit] = useState<Deposit | null>(null);
   const [selectedDepositId, setSelectedDepositId] = useState<string>("");
+  const [transactionType, setTransactionType] = useState<"deposit" | "withdrawal" | "interest">("deposit");
 
-  // Расчеты для статистики
-  const getTotalBalance = () => {
-    return deposits
-      .filter(deposit => deposit.status === "active")
-      .reduce((sum, deposit) => sum + deposit.currentBalance, 0);
-  };
+  // Загрузка данных при монтировании компонента
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const getTotalInterestEarned = () => {
-    return transactions
-      .filter(transaction => transaction.type === "interest")
-      .reduce((sum, transaction) => sum + transaction.amount, 0);
-  };
-
-  const getActiveDepositsCount = () => {
-    return deposits.filter(deposit => deposit.status === "active").length;
-  };
-
-  const getMaturedDepositsCount = () => {
-    const today = new Date();
-    return deposits.filter(deposit => {
-      const endDate = new Date(deposit.endDate);
-      return endDate <= today && deposit.status === "active";
-    }).length;
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      
+      // Загружаем депозиты
+      const depositsResponse = await apiService.getDeposits();
+      setDeposits(depositsResponse.data || []);
+      
+      // Загружаем транзакции
+      const transactionsResponse = await apiService.getDepositTransactions();
+      setTransactions(transactionsResponse.data || []);
+      
+      // Загружаем доходы для связи
+      const incomesResponse = await apiService.getIncome();
+      setIncomes(incomesResponse.data || []);
+      
+      // Загружаем статистику
+      const statsResponse = await apiService.getDepositStatistics();
+      setStatistics(statsResponse.data || {
+        totalBalance: 0,
+        totalInterestEarned: 0,
+        activeDepositsCount: 0,
+        maturedDepositsCount: 0
+      });
+      
+    } catch (error: any) {
+      addNotification({ 
+        message: `Ошибка загрузки данных: ${error.response?.data?.message || error.message}`, 
+        type: "error" 
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Данные для аналитики
   const getBalanceGrowthData = () => {
     const monthlyData = transactions.reduce((acc, transaction) => {
       const date = new Date(transaction.transactionDate);
-      const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const monthName = date.toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
       
       if (!acc[monthKey]) {
@@ -74,30 +109,25 @@ function Deposits() {
       return acc;
     }, {} as Record<string, { month: string; deposits: number; withdrawals: number; interest: number; balance: number }>);
 
-    // Вычисляем накопительный баланс
     let cumulativeBalance = 0;
-    return Object.values(monthlyData)
-      .sort((a, b) => {
-        const [yearA, monthA] = a.month.split(" ");
-        const [yearB, monthB] = b.month.split(" ");
-        return new Date(parseInt(yearA), monthA === "янв" ? 0 : monthA === "фев" ? 1 : 2).getTime() - 
-               new Date(parseInt(yearB), monthB === "янв" ? 0 : monthB === "фев" ? 1 : 2).getTime();
-      })
-      .map(item => {
+    return Object.entries(monthlyData)
+      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+      .map(([_, item]) => {
         cumulativeBalance += item.deposits - item.withdrawals + item.interest;
         return { ...item, balance: cumulativeBalance };
       });
   };
 
   const getDepositsByTypeData = () => {
+    const typeNames = {
+      fixed: "Срочный",
+      savings: "Накопительный", 
+      investment: "Инвестиционный",
+      spending: "Расходный"  // Добавлено для исправления ошибки
+    };
+    
     const typeData = deposits.reduce((acc, deposit) => {
-      const typeNames = {
-        fixed: "Срочный",
-        savings: "Накопительный", 
-        investment: "Инвестиционный"
-      };
-      
-      const typeName = typeNames[deposit.type];
+      const typeName = typeNames[deposit.type as keyof typeof typeNames];  // Исправлено с as для типизации
       if (!acc[typeName]) {
         acc[typeName] = { name: typeName, value: 0, count: 0 };
       }
@@ -110,97 +140,110 @@ function Deposits() {
   };
 
   // Обработчики форм
-  const handleDepositSubmit = (formData: FormData) => {
-    const depositData = {
-      id: editingDeposit?.id || Date.now().toString(),
-      bankName: formData.get("bankName") as string,
-      accountNumber: formData.get("accountNumber") as string,
-      amount: parseFloat(formData.get("amount") as string),
-      currentBalance: editingDeposit?.currentBalance || parseFloat(formData.get("amount") as string),
-      interestRate: parseFloat(formData.get("interestRate") as string),
-      startDate: formData.get("startDate") as string,
-      endDate: formData.get("endDate") as string,
-      type: formData.get("type") as "fixed" | "savings" | "investment",
-      autoRenewal: formData.get("autoRenewal") === "on",
-      status: "active" as const,
-      description: formData.get("description") as string || undefined
-    };
+  const handleDepositSubmit = async (formData: FormData) => {
+    try {
+      const depositData = {
+        bankName: formData.get("bankName") as string,
+        accountNumber: formData.get("accountNumber") as string,
+        amount: parseFloat(formData.get("amount") as string),
+        interestRate: parseFloat(formData.get("interestRate") as string),
+        startDate: formData.get("startDate") as string,
+        endDate: formData.get("endDate") as string,
+        type: formData.get("type") as "fixed" | "savings" | "investment" | "spending",  // Добавлен spending, если нужен
+        autoRenewal: formData.get("autoRenewal") === "on",
+        description: formData.get("description") as string || undefined
+      };
 
-    if (editingDeposit) {
-      setDeposits(prev => prev.map(deposit => deposit.id === editingDeposit.id ? depositData : deposit));
-      addNotification({ message: "Депозит успешно обновлен", type: "success" });
-    } else {
-      setDeposits(prev => [...prev, depositData]);
-      addNotification({ message: "Депозит успешно добавлен", type: "success" });
+      if (editingDeposit) {
+        await apiService.updateDeposit(editingDeposit.id, depositData);
+        addNotification({ message: "Депозит успешно обновлен", type: "success" });
+      } else {
+        await apiService.createDeposit(depositData);
+        addNotification({ message: "Депозит успешно добавлен", type: "success" });
+      }
+
+      setIsDepositDialogOpen(false);
+      setEditingDeposit(null);
+      await loadData();
+    } catch (error: any) {
+      addNotification({ 
+        message: `Ошибка: ${error.response?.data?.message || error.message}`, 
+        type: "error" 
+      });
     }
-
-    setIsDepositDialogOpen(false);
-    setEditingDeposit(null);
   };
 
-  const handleTransactionSubmit = (formData: FormData) => {
-    const transactionData = {
-      id: Date.now().toString(),
-      depositId: selectedDepositId,
-      type: formData.get("type") as "deposit" | "withdrawal" | "interest",
-      amount: parseFloat(formData.get("amount") as string),
-      transactionDate: formData.get("transactionDate") as string,
-      description: formData.get("description") as string || undefined
-    };
+  const handleTransactionSubmit = async (formData: FormData) => {
+    try {
+      const transactionData = {
+        depositId: selectedDepositId,
+        type: transactionType,
+        amount: parseFloat(formData.get("amount") as string),
+        transactionDate: formData.get("transactionDate") as string,
+        description: formData.get("description") as string || undefined,
+        incomeId: transactionType === "deposit" ? (formData.get("incomeId") as string || undefined) : undefined
+      };
 
-    setTransactions(prev => [...prev, transactionData]);
-
-    // Обновляем баланс депозита
-    setDeposits(prev => prev.map(deposit => {
-      if (deposit.id === selectedDepositId) {
-        let newBalance = deposit.currentBalance;
-        if (transactionData.type === "deposit" || transactionData.type === "interest") {
-          newBalance += transactionData.amount;
-        } else if (transactionData.type === "withdrawal") {
-          newBalance = Math.max(0, newBalance - transactionData.amount);
-        }
-        
-        return { ...deposit, currentBalance: newBalance };
-      }
-      return deposit;
-    }));
-
-    addNotification({ message: "Транзакция успешно добавлена", type: "success" });
-    setIsTransactionDialogOpen(false);
-    setSelectedDepositId("");
+      await apiService.createDepositTransaction(transactionData);
+      addNotification({ message: "Транзакция успешно добавлена", type: "success" });
+      
+      setIsTransactionDialogOpen(false);
+      setSelectedDepositId("");
+      setTransactionType("deposit");
+      await loadData();
+    } catch (error: any) {
+      addNotification({ 
+        message: error.response?.data?.message || "Ошибка при создании транзакции", 
+        type: "error" 
+      });
+    }
   };
 
-  const closeDeposit = (id: string) => {
-    setDeposits(prev => prev.map(deposit => 
-      deposit.id === id ? { ...deposit, status: "closed" as const } : deposit
-    ));
-    addNotification({ message: "Депозит закрыт", type: "info" });
+  const closeDeposit = async (id: string) => {
+    try {
+      await apiService.closeDeposit(id);
+      addNotification({ message: "Депозит закрыт", type: "info" });
+      await loadData();
+    } catch (error: any) {
+      addNotification({ 
+        message: `Ошибка: ${error.response?.data?.message || error.message}`, 
+        type: "error" 
+      });
+    }
   };
 
-  const renewDeposit = (id: string) => {
-    setDeposits(prev => prev.map(deposit => {
-      if (deposit.id === id) {
-        const newEndDate = new Date();
-        newEndDate.setFullYear(newEndDate.getFullYear() + 1);
-        return {
-          ...deposit,
-          startDate: new Date().toISOString().split('T')[0],
-          endDate: newEndDate.toISOString().split('T')[0],
-          status: "active" as const
-        };
-      }
-      return deposit;
-    }));
-    addNotification({ message: "Депозит продлен", type: "success" });
+  const renewDeposit = async (id: string) => {
+    try {
+      await apiService.renewDeposit(id);
+      addNotification({ message: "Депозит продлен", type: "success" });
+      await loadData();
+    } catch (error: any) {
+      addNotification({ 
+        message: `Ошибка: ${error.response?.data?.message || error.message}`, 
+        type: "error" 
+      });
+    }
   };
 
-  const deleteDeposit = (id: string) => {
-    setDeposits(prev => prev.filter(deposit => deposit.id !== id));
-    setTransactions(prev => prev.filter(transaction => transaction.depositId !== id));
-    addNotification({ message: "Депозит удален", type: "info" });
+  const deleteDeposit = async (id: string) => {
+    if (!confirm("Вы уверены, что хотите удалить этот депозит?")) {
+      return;
+    }
+    
+    try {
+      await apiService.deleteDeposit(id);
+      addNotification({ message: "Депозит удален", type: "info" });
+      await loadData();
+    } catch (error: any) {
+      addNotification({ 
+        message: `Ошибка: ${error.response?.data?.message || error.message}`, 
+        type: "error" 
+      });
+    }
   };
 
   const calculateDaysToMaturity = (deposit: Deposit) => {
+    if (!deposit.endDate) return 0;  // Исправление: проверка на undefined
     const today = new Date();
     const endDate = new Date(deposit.endDate);
     const diffTime = endDate.getTime() - today.getTime();
@@ -209,12 +252,24 @@ function Deposits() {
   };
 
   const calculateAccruedInterest = (deposit: Deposit) => {
+    if (!deposit.startDate || deposit.interestRate === undefined) return 0;  // Исправление: проверка на undefined
     const today = new Date();
     const startDate = new Date(deposit.startDate);
     const daysHeld = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
     const yearlyInterest = (deposit.amount * deposit.interestRate) / 100;
     return (yearlyInterest * daysHeld) / 365;
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Загрузка данных...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -227,7 +282,7 @@ function Deposits() {
               <span className="text-green-700 dark:text-green-300">Общий баланс</span>
             </div>
             <p className="text-2xl text-green-900 dark:text-green-100">
-              {getTotalBalance().toLocaleString("kk-KZ")} ₸
+              {statistics.totalBalance.toLocaleString("kk-KZ")} ₸
             </p>
           </CardContent>
         </Card>
@@ -239,7 +294,7 @@ function Deposits() {
               <span className="text-blue-700 dark:text-blue-300">Доход от процентов</span>
             </div>
             <p className="text-2xl text-blue-900 dark:text-blue-100">
-              {getTotalInterestEarned().toLocaleString("kk-KZ")} ₸
+              {statistics.totalInterestEarned.toLocaleString("kk-KZ")} ₸
             </p>
           </CardContent>
         </Card>
@@ -251,7 +306,7 @@ function Deposits() {
               <span className="text-purple-700 dark:text-purple-300">Активных депозитов</span>
             </div>
             <p className="text-2xl text-purple-900 dark:text-purple-100">
-              {getActiveDepositsCount()}
+              {statistics.activeDepositsCount}
             </p>
           </CardContent>
         </Card>
@@ -263,7 +318,7 @@ function Deposits() {
               <span className="text-orange-700 dark:text-orange-300">К закрытию</span>
             </div>
             <p className="text-2xl text-orange-900 dark:text-orange-100">
-              {getMaturedDepositsCount()}
+              {statistics.maturedDepositsCount}
             </p>
           </CardContent>
         </Card>
@@ -288,7 +343,7 @@ function Deposits() {
                     Добавить депозит
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>{editingDeposit ? "Редактировать депозит" : "Добавить депозит"}</DialogTitle>
                   </DialogHeader>
@@ -315,7 +370,7 @@ function Deposits() {
                     </div>
                     <div>
                       <Label htmlFor="type">Тип депозита</Label>
-                      <Select name="type" defaultValue={editingDeposit?.type}>
+                      <Select name="type" defaultValue={editingDeposit?.type || "fixed"}>
                         <SelectTrigger>
                           <SelectValue placeholder="Выберите тип" />
                         </SelectTrigger>
@@ -323,6 +378,7 @@ function Deposits() {
                           <SelectItem value="fixed">Срочный депозит</SelectItem>
                           <SelectItem value="savings">Накопительный счет</SelectItem>
                           <SelectItem value="investment">Инвестиционный депозит</SelectItem>
+                          <SelectItem value="spending">Расходный счет</SelectItem>  {/* Добавлено для spending */}
                         </SelectContent>
                       </Select>
                     </div>
@@ -422,13 +478,13 @@ function Deposits() {
                       <div key={deposit.id} className="p-4 border rounded-lg">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4>{deposit.bankName}</h4>
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <h4 className="font-semibold">{deposit.bankName}</h4>
                               <Badge variant={deposit.status === "active" ? "default" : deposit.status === "matured" ? "secondary" : "outline"}>
                                 {deposit.status === "active" ? "Активный" : deposit.status === "matured" ? "Созрел" : "Закрыт"}
                               </Badge>
                               <Badge variant="outline">
-                                {deposit.type === "fixed" ? "Срочный" : deposit.type === "savings" ? "Накопительный" : "Инвестиционный"}
+                                {deposit.type === "fixed" ? "Срочный" : deposit.type === "savings" ? "Накопительный" : deposit.type === "investment" ? "Инвестиционный" : "Расходный"}
                               </Badge>
                               {deposit.autoRenewal && (
                                 <Badge variant="secondary">Автопродление</Badge>
@@ -454,7 +510,7 @@ function Deposits() {
                             </Button>
                             {deposit.status === "active" && (
                               <>
-                                {isMatured ? (
+                                {isMatured && (
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -462,7 +518,7 @@ function Deposits() {
                                   >
                                     Продлить
                                   </Button>
-                                ) : null}
+                                )}
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -485,7 +541,7 @@ function Deposits() {
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-3">
                           <div>
                             <p className="text-sm text-muted-foreground">Текущий баланс</p>
-                            <p className="text-lg">{deposit.currentBalance.toLocaleString("kk-KZ")} ₸</p>
+                            <p className="text-lg font-semibold">{deposit.currentBalance.toLocaleString("kk-KZ")} ₸</p>
                           </div>
                           <div>
                             <p className="text-sm text-muted-foreground">Начальная сумма</p>
@@ -507,7 +563,7 @@ function Deposits() {
 
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-muted-foreground">
-                            {new Date(deposit.startDate).toLocaleDateString("ru-RU")} - {new Date(deposit.endDate).toLocaleDateString("ru-RU")}
+                            {deposit.startDate ? new Date(deposit.startDate).toLocaleDateString("ru-RU") : "Не указана"} - {deposit.endDate ? new Date(deposit.endDate).toLocaleDateString("ru-RU") : "Не указана"}  {/* Исправление: проверка на undefined */}
                           </span>
                           {deposit.status === "active" && (
                             <Button
@@ -539,7 +595,7 @@ function Deposits() {
               <form onSubmit={(e) => { e.preventDefault(); handleTransactionSubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
                 <div>
                   <Label htmlFor="type">Тип транзакции</Label>
-                  <Select name="type">
+                  <Select name="type" value={transactionType} onValueChange={(value: "deposit" | "withdrawal" | "interest") => setTransactionType(value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Выберите тип" />
                     </SelectTrigger>
@@ -550,6 +606,31 @@ function Deposits() {
                     </SelectContent>
                   </Select>
                 </div>
+                
+                {transactionType === "deposit" && incomes.length > 0 && (
+                  <div>
+                    <Label htmlFor="incomeId">Источник дохода (необязательно)</Label>
+                    <Select name="incomeId">
+                      <SelectTrigger>
+                        <SelectValue placeholder="Выберите доход" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Не указывать</SelectItem>
+                        {incomes
+                          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                          .map(income => (
+                            <SelectItem key={income.id} value={income.id}>
+                              {income.source} - {income.amount.toLocaleString("kk-KZ")} ₸ ({new Date(income.date).toLocaleDateString("ru-RU")})
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Укажите, с какого дохода вы пополняете депозит
+                    </p>
+                  </div>
+                )}
+                
                 <div>
                   <Label htmlFor="amount">Сумма (₸)</Label>
                   <Input 
@@ -559,6 +640,11 @@ function Deposits() {
                     step="0.01" 
                     required 
                   />
+                  {transactionType === "withdrawal" && selectedDepositId && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Максимум: {deposits.find(d => d.id === selectedDepositId)?.currentBalance.toLocaleString("kk-KZ")} ₸
+                    </p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="transactionDate">Дата транзакции</Label>
@@ -614,6 +700,7 @@ function Deposits() {
                     .sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime())
                     .map(transaction => {
                       const deposit = deposits.find(d => d.id === transaction.depositId);
+                      const income = (transaction as any).incomeId ? incomes.find(i => i.id === (transaction as any).incomeId) : null;  // Временное as any; обновите тип DepositTransaction
                       const typeNames = {
                         deposit: "Пополнение",
                         withdrawal: "Снятие",
@@ -628,11 +715,16 @@ function Deposits() {
                       return (
                         <div key={transaction.id} className="flex items-center justify-between p-4 border rounded-lg">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4>{deposit?.bankName || "Неизвестный депозит"}</h4>
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <h4 className="font-semibold">{deposit?.bankName || "Неизвестный депозит"}</h4>
                               <Badge variant={typeColors[transaction.type]}>
                                 {typeNames[transaction.type]}
                               </Badge>
+                              {income && (
+                                <Badge variant="outline" className="text-blue-600 border-blue-600">
+                                  Из: {income.source}
+                                </Badge>
+                              )}
                             </div>
                             <p className="text-sm text-muted-foreground">
                               {new Date(transaction.transactionDate).toLocaleDateString("ru-RU")}
@@ -640,7 +732,7 @@ function Deposits() {
                             </p>
                           </div>
                           <div className="text-right">
-                            <span className={`text-lg ${
+                            <span className={`text-lg font-semibold ${
                               transaction.type === "withdrawal" ? "text-red-600" : "text-green-600"
                             }`}>
                               {transaction.type === "withdrawal" ? "-" : "+"}{transaction.amount.toLocaleString("kk-KZ")} ₸
@@ -703,7 +795,7 @@ function Deposits() {
                           dataKey="value"
                         >
                           {getDepositsByTypeData().map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={["#10b981", "#3b82f6", "#8b5cf6"][index % 3]} />
+                            <Cell key={`cell-${index}`} fill={["#10b981", "#3b82f6", "#8b5cf6", "#f59e0b"][index % 4]} />  {/* Добавлен цвет для spending */}
                           ))}
                         </Pie>
                         <Tooltip formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
@@ -718,12 +810,12 @@ function Deposits() {
                         return (
                           <div key={index} className="p-3 bg-muted/50 rounded">
                             <div className="flex justify-between items-center mb-2">
-                              <span>{item.name}</span>
+                              <span className="font-medium">{item.name}</span>
                               <Badge variant="outline">{item.count} депозитов</Badge>
                             </div>
                             <div className="flex justify-between text-sm">
                               <span className="text-muted-foreground">{percentage.toFixed(1)}%</span>
-                              <span>{item.value.toLocaleString("kk-KZ")} ₸</span>
+                              <span className="font-semibold">{item.value.toLocaleString("kk-KZ")} ₸</span>
                             </div>
                           </div>
                         );
