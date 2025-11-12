@@ -490,6 +490,7 @@ export const apiService = {
     const response = await api.get('/deposits/statistics', { params });
     return response.data;
   },
+
 };
 
 export default api;

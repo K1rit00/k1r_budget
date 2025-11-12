@@ -22,13 +22,26 @@ const { validateDeposit } = require('../middleware/validation');
 // Все роуты требуют авторизации
 router.use(protect);
 
-// Deposit routes
+// ВАЖНО: Специфичные маршруты должны быть ПЕРЕД параметризованными!
+
+// Statistics route (должен быть перед /:id)
+router.route('/statistics')
+  .get(getStatistics);
+
+// Transaction routes (должны быть перед /:id)
+router.route('/transactions')
+  .get(getTransactions)
+  .post(createTransaction);
+
+router.route('/transactions/:id')
+  .get(getTransaction)
+  .put(updateTransaction)
+  .delete(deleteTransaction);
+
+// Deposit routes (параметризованные маршруты в конце)
 router.route('/')
   .get(getDeposits)
   .post(validateDeposit, createDeposit);
-
-router.route('/statistics')
-  .get(getStatistics);
 
 router.route('/:id')
   .get(getDeposit)
@@ -40,15 +53,5 @@ router.route('/:id/close')
 
 router.route('/:id/renew')
   .patch(renewDeposit);
-
-// Transaction routes
-router.route('/transactions')
-  .get(getTransactions)
-  .post(createTransaction);
-
-router.route('/transactions/:id')
-  .get(getTransaction)
-  .put(updateTransaction)
-  .delete(deleteTransaction);
 
 module.exports = router;

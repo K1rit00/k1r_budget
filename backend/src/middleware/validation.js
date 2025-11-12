@@ -301,14 +301,24 @@ exports.validateCredit = (req, res, next) => {
 
 // Валидация Deposit (депозиты)
 exports.validateDeposit = (req, res, next) => {
-  const { name, amount, interestRate, startDate, endDate } = req.body;
+  // Логирование для отладки
+  console.log('Deposit validation - received body:', JSON.stringify(req.body, null, 2));
+  
+  const { bankName, accountNumber, amount, interestRate, startDate, endDate, type } = req.body;
   const errors = [];
 
-  // Проверка названия
-  if (!name || name.trim() === '') {
-    errors.push('Название депозита обязательно');
-  } else if (name.length > 200) {
-    errors.push('Название не может быть длиннее 200 символов');
+  // Проверка названия банка
+  if (!bankName || bankName.trim() === '') {
+    errors.push('Название банка обязательно');
+  } else if (bankName.length > 200) {
+    errors.push('Название банка не может быть длиннее 200 символов');
+  }
+
+  // Проверка номера счета
+  if (!accountNumber || accountNumber.trim() === '') {
+    errors.push('Номер счета обязателен');
+  } else if (accountNumber.length > 100) {
+    errors.push('Номер счета не может быть длиннее 100 символов');
   }
 
   // Проверка суммы
@@ -319,10 +329,13 @@ exports.validateDeposit = (req, res, next) => {
     if (isNaN(amountNum) || amountNum <= 0) {
       errors.push('Сумма должна быть положительным числом');
     }
+    if (amountNum > 999999999999) {
+      errors.push('Сумма слишком большая');
+    }
   }
 
   // Проверка процентной ставки
-  if (!interestRate) {
+  if (interestRate === undefined || interestRate === null || interestRate === '') {
     errors.push('Процентная ставка обязательна');
   } else {
     const rate = parseFloat(interestRate);
@@ -331,15 +344,28 @@ exports.validateDeposit = (req, res, next) => {
     }
   }
 
-  // Проверка дат
-  if (startDate) {
+  // Проверка типа депозита
+  const validTypes = ['fixed', 'savings', 'investment'];
+  if (!type) {
+    errors.push('Тип депозита обязателен');
+  } else if (!validTypes.includes(type)) {
+    errors.push('Недопустимый тип депозита');
+  }
+
+  // Проверка даты начала
+  if (!startDate) {
+    errors.push('Дата открытия обязательна');
+  } else {
     const start = new Date(startDate);
     if (isNaN(start.getTime())) {
       errors.push('Некорректная дата начала');
     }
   }
 
-  if (endDate) {
+  // Проверка даты окончания
+  if (!endDate) {
+    errors.push('Дата закрытия обязательна');
+  } else {
     const end = new Date(endDate);
     if (isNaN(end.getTime())) {
       errors.push('Некорректная дата окончания');
@@ -348,8 +374,27 @@ exports.validateDeposit = (req, res, next) => {
     if (startDate) {
       const start = new Date(startDate);
       if (end <= start) {
-        errors.push('Дата окончания должна быть после даты начала');
+        errors.push('Дата закрытия должна быть после даты открытия');
       }
+    }
+  }
+
+  // Проверка статуса (если указан)
+  const validStatuses = ['active', 'matured', 'closed'];
+  if (req.body.status && !validStatuses.includes(req.body.status)) {
+    errors.push('Недопустимый статус депозита');
+  }
+
+  // Проверка описания (если есть)
+  if (req.body.description && req.body.description.length > 500) {
+    errors.push('Описание не может быть длиннее 500 символов');
+  }
+
+  // Проверка currentBalance (если указан)
+  if (req.body.currentBalance !== undefined && req.body.currentBalance !== null) {
+    const balance = parseFloat(req.body.currentBalance);
+    if (isNaN(balance) || balance < 0) {
+      errors.push('Текущий баланс не может быть отрицательным');
     }
   }
 
