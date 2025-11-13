@@ -455,6 +455,119 @@ export const apiService = {
     return response.data;
   },
 
+  // Banks (Банки)
+  getBanks: async () => {
+    const response = await api.get('/banks');
+    return response.data;
+  },
+
+  getBank: async (id: string) => {
+    const response = await api.get(`/banks/${id}`);
+    return response.data;
+  },
+
+  createBank: async (data: {
+    name: string;
+    description?: string;
+  }) => {
+    const response = await api.post('/banks', data);
+    return response.data;
+  },
+
+  updateBank: async (id: string, data: {
+    name?: string;
+    description?: string;
+  }) => {
+    const response = await api.put(`/banks/${id}`, data);
+    return response.data;
+  },
+
+  deleteBank: async (id: string) => {
+    const response = await api.delete(`/banks/${id}`);
+    return response.data;
+  },
+
+  // Currencies (Валюты)
+  getCurrencies: async () => {
+    const response = await api.get('/currencies');
+    return response.data;
+  },
+
+  getCurrency: async (id: string) => {
+    const response = await api.get(`/currencies/${id}`);
+    return response.data;
+  },
+
+  createCurrency: async (data: {
+    code: string;
+    name: string;
+    symbol: string;
+    exchangeRate?: number;
+    isDefault?: boolean;
+  }) => {
+    const response = await api.post('/currencies', data);
+    return response.data;
+  },
+
+  updateCurrency: async (id: string, data: {
+    code?: string;
+    name?: string;
+    symbol?: string;
+    exchangeRate?: number;
+    isDefault?: boolean;
+  }) => {
+    const response = await api.put(`/currencies/${id}`, data);
+    return response.data;
+  },
+
+  deleteCurrency: async (id: string) => {
+    const response = await api.delete(`/currencies/${id}`);
+    return response.data;
+  },
+
+  setDefaultCurrency: async (id: string) => {
+    const response = await api.patch(`/currencies/${id}/set-default`);
+    return response.data;
+  },
+
+  // Utility Types (Типы коммунальных услуг)
+  getUtilityTypes: async () => {
+    const response = await api.get('/utility-types');
+    return response.data;
+  },
+
+  getUtilityType: async (id: string) => {
+    const response = await api.get(`/utility-types/${id}`);
+    return response.data;
+  },
+
+  createUtilityType: async (data: {
+    name: string;
+    description?: string;
+    icon?: string;
+    color?: string;
+    order?: number;
+  }) => {
+    const response = await api.post('/utility-types', data);
+    return response.data;
+  },
+
+  updateUtilityType: async (id: string, data: {
+    name?: string;
+    description?: string;
+    icon?: string;
+    color?: string;
+    order?: number;
+  }) => {
+    const response = await api.put(`/utility-types/${id}`, data);
+    return response.data;
+  },
+
+  deleteUtilityType: async (id: string) => {
+    const response = await api.delete(`/utility-types/${id}`);
+    return response.data;
+  },
+
   // Deposit Transactions
   getDepositTransactions: async (params?: {
     depositId?: string;

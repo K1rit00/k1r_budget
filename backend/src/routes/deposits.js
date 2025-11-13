@@ -22,13 +22,16 @@ const { validateDeposit } = require('../middleware/validation');
 // Все роуты требуют авторизации
 router.use(protect);
 
+// ========================================
 // ВАЖНО: Специфичные маршруты должны быть ПЕРЕД параметризованными!
+// Порядок имеет критическое значение в Express.js
+// ========================================
 
-// Statistics route (должен быть перед /:id)
+// 1. Statistics route (самый специфичный)
 router.route('/statistics')
   .get(getStatistics);
 
-// Transaction routes (должны быть перед /:id)
+// 2. Transaction routes (специфичные)
 router.route('/transactions')
   .get(getTransactions)
   .post(createTransaction);
@@ -38,20 +41,22 @@ router.route('/transactions/:id')
   .put(updateTransaction)
   .delete(deleteTransaction);
 
-// Deposit routes (параметризованные маршруты в конце)
-router.route('/')
-  .get(getDeposits)
-  .post(validateDeposit, createDeposit);
-
-router.route('/:id')
-  .get(getDeposit)
-  .put(validateDeposit, updateDeposit)
-  .delete(deleteDeposit);
-
+// 3. Deposit action routes (специфичные операции)
 router.route('/:id/close')
   .patch(closeDeposit);
 
 router.route('/:id/renew')
   .patch(renewDeposit);
+
+// 4. Base deposit routes
+router.route('/')
+  .get(getDeposits)
+  .post(validateDeposit, createDeposit);
+
+// 5. Параметризованный маршрут ДОЛЖЕН быть в конце!
+router.route('/:id')
+  .get(getDeposit)
+  .put(validateDeposit, updateDeposit)
+  .delete(deleteDeposit);
 
 module.exports = router;

@@ -409,6 +409,127 @@ exports.validateDeposit = (req, res, next) => {
   next();
 };
 
+// Валидация банка
+exports.validateBank = (req, res, next) => {
+  const { name } = req.body;
+  const errors = [];
+
+  // Проверка названия
+  if (!name || name.trim() === '') {
+    errors.push('Название банка обязательно');
+  } else if (name.length > 200) {
+    errors.push('Название банка не может быть длиннее 200 символов');
+  }
+
+  // Проверка описания (если есть)
+  if (req.body.description && req.body.description.length > 500) {
+    errors.push('Описание не может быть длиннее 500 символов');
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Ошибка валидации',
+      errors
+    });
+  }
+
+  next();
+};
+
+// Валидация валюты
+exports.validateCurrency = (req, res, next) => {
+  const { code, name, symbol } = req.body;
+  const errors = [];
+
+  // Проверка кода валюты
+  if (!code || code.trim() === '') {
+    errors.push('Код валюты обязателен');
+  } else if (code.length > 10) {
+    errors.push('Код валюты не может быть длиннее 10 символов');
+  } else if (!/^[A-Z]+$/.test(code.toUpperCase())) {
+    errors.push('Код валюты должен содержать только заглавные буквы');
+  }
+
+  // Проверка названия
+  if (!name || name.trim() === '') {
+    errors.push('Название валюты обязательно');
+  } else if (name.length > 100) {
+    errors.push('Название валюты не может быть длиннее 100 символов');
+  }
+
+  // Проверка символа
+  if (!symbol || symbol.trim() === '') {
+    errors.push('Символ валюты обязателен');
+  } else if (symbol.length > 10) {
+    errors.push('Символ валюты не может быть длиннее 10 символов');
+  }
+
+  // Проверка курса обмена (если указан)
+  if (req.body.exchangeRate !== undefined && req.body.exchangeRate !== null) {
+    const rate = parseFloat(req.body.exchangeRate);
+    if (isNaN(rate) || rate < 0) {
+      errors.push('Курс обмена должен быть положительным числом');
+    }
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Ошибка валидации',
+      errors
+    });
+  }
+
+  next();
+};
+
+// Валидация типа коммунальной услуги
+exports.validateUtilityType = (req, res, next) => {
+  const { name } = req.body;
+  const errors = [];
+
+  // Проверка названия
+  if (!name || name.trim() === '') {
+    errors.push('Название типа услуги обязательно');
+  } else if (name.length > 100) {
+    errors.push('Название не может быть длиннее 100 символов');
+  }
+
+  // Проверка описания (если есть)
+  if (req.body.description && req.body.description.length > 500) {
+    errors.push('Описание не может быть длиннее 500 символов');
+  }
+
+  // Проверка иконки (если есть)
+  if (req.body.icon && req.body.icon.length > 50) {
+    errors.push('Название иконки не может быть длиннее 50 символов');
+  }
+
+  // Проверка цвета (если есть)
+  if (req.body.color && !/^#[0-9A-Fa-f]{6}$/.test(req.body.color)) {
+    errors.push('Цвет должен быть в формате HEX (#RRGGBB)');
+  }
+
+  // Проверка порядка (если есть)
+  if (req.body.order !== undefined && req.body.order !== null) {
+    const order = parseInt(req.body.order);
+    if (isNaN(order)) {
+      errors.push('Порядок должен быть числом');
+    }
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Ошибка валидации',
+      errors
+    });
+  }
+
+  next();
+};
+
 // Валидация MonthlyExpense (ежемесячные расходы)
 exports.validateMonthlyExpense = (req, res, next) => {
   const { name, amount, category } = req.body;

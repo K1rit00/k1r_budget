@@ -44,6 +44,11 @@ function Deposits() {
   const [selectedDepositId, setSelectedDepositId] = useState<string>("");
   const [transactionType, setTransactionType] = useState<TransactionType>("deposit");
 
+  // Вспомогательная функция для получения ID
+  const getItemId = (item: any): string => {
+    return item._id || item.id || '';
+  };
+
   useEffect(() => {
     loadData();
   }, []);
@@ -164,10 +169,9 @@ function Deposits() {
         description: (formData.get("description") as string)?.trim() || undefined
       };
 
-      console.log('Отправка данных депозита:', depositData);
-
       if (editingDeposit) {
-        await apiService.updateDeposit(editingDeposit.id, depositData);
+        const depositId = getItemId(editingDeposit);
+        await apiService.updateDeposit(depositId, depositData);
         addNotification({ message: "Депозит успешно обновлен", type: "success" });
       } else {
         await apiService.createDeposit(depositData);
@@ -182,8 +186,6 @@ function Deposits() {
         response?: { data?: { message?: string; errors?: string[] } };
         message?: string
       };
-
-      console.error('Ошибка создания депозита:', err);
 
       const errorMessage = err.response?.data?.errors
         ? err.response.data.errors.join(', ')
@@ -354,7 +356,7 @@ function Deposits() {
         </Card>
       </div>
 
-      {/* Main content - Continued in next message due to length */}
+      {/* Main content */}
       <Tabs defaultValue="deposits" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="deposits">Депозиты</TabsTrigger>
@@ -500,6 +502,7 @@ function Deposits() {
                   </div>
                 ) : (
                   deposits.map(deposit => {
+                    const depositId = getItemId(deposit);
                     const daysToMaturity = calculateDaysToMaturity(deposit);
                     const accruedInterest = calculateAccruedInterest(deposit);
                     const isMatured = daysToMaturity <= 0;
@@ -512,7 +515,7 @@ function Deposits() {
                     };
 
                     return (
-                      <div key={deposit.id} className="p-4 border rounded-lg">
+                      <div key={depositId} className="p-4 border rounded-lg">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -551,7 +554,7 @@ function Deposits() {
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    onClick={() => renewDeposit(deposit.id)}
+                                    onClick={() => renewDeposit(depositId)}
                                   >
                                     Продлить
                                   </Button>
@@ -559,7 +562,7 @@ function Deposits() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => closeDeposit(deposit.id)}
+                                  onClick={() => closeDeposit(depositId)}
                                 >
                                   Закрыть
                                 </Button>
@@ -568,7 +571,7 @@ function Deposits() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => deleteDeposit(deposit.id)}
+                              onClick={() => deleteDeposit(depositId)}
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -607,7 +610,7 @@ function Deposits() {
                               size="sm"
                               variant="outline"
                               onClick={() => {
-                                setSelectedDepositId(deposit.id);
+                                setSelectedDepositId(depositId);
                                 setIsTransactionDialogOpen(true);
                               }}
                             >
@@ -641,7 +644,7 @@ function Deposits() {
                   />
                   {transactionType === "withdrawal" && selectedDepositId && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      Максимум: {deposits.find(d => d.id === selectedDepositId)?.currentBalance.toLocaleString("kk-KZ")} ₸
+                      Максимум: {deposits.find(d => getItemId(d) === selectedDepositId)?.currentBalance.toLocaleString("kk-KZ")} ₸
                     </p>
                   )}
                 </div>
@@ -698,8 +701,9 @@ function Deposits() {
                   transactions
                     .sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime())
                     .map(transaction => {
-                      const deposit = deposits.find(d => d.id === transaction.depositId);
-                      const income = (transaction as any).incomeId ? incomes.find(i => i.id === (transaction as any).incomeId) : null;
+                      const transactionId = getItemId(transaction);
+                      const deposit = deposits.find(d => getItemId(d) === transaction.depositId);
+                      const income = (transaction as any).incomeId ? incomes.find(i => getItemId(i) === (transaction as any).incomeId) : null;
                       const typeNames: Record<TransactionType, string> = {
                         deposit: "Пополнение",
                         withdrawal: "Снятие",
@@ -712,7 +716,7 @@ function Deposits() {
                       };
 
                       return (
-                        <div key={transaction.id} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div key={transactionId} className="flex items-center justify-between p-4 border rounded-lg">
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <h4 className="font-semibold">{deposit?.bankName || "Неизвестный депозит"}</h4>
@@ -793,7 +797,7 @@ function Deposits() {
                           dataKey="value"
                         >
                           {getDepositsByTypeData().map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            <Cell key={`cell-${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
                         <Tooltip formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
@@ -806,7 +810,7 @@ function Deposits() {
                         const percentage = total > 0 ? (item.value / total) * 100 : 0;
 
                         return (
-                          <div key={index} className="p-3 bg-muted/50 rounded">
+                          <div key={`deposit-type-stat-${item.name}-${index}`} className="p-3 bg-muted/50 rounded">
                             <div className="flex justify-between items-center mb-2">
                               <span className="font-medium">{item.name}</span>
                               <Badge variant="outline">{item.count} депозитов</Badge>
