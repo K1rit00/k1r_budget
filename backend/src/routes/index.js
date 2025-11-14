@@ -10,7 +10,7 @@ const depositRoutes = require('./deposits');
 const rentRoutes = require('./rent');
 const banksRoutes = require('./banks');
 const currenciesRoutes = require('./currencies');
-const utilityTypesRoutes = require('./utillityTypes');
+const utilityTypesRoutes = require('./utilityTypes');
 
 // Mount routes
 router.use('/auth', authRoutes);

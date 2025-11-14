@@ -344,8 +344,8 @@ exports.validateDeposit = (req, res, next) => {
     }
   }
 
-  // Проверка типа депозита
-  const validTypes = ['fixed', 'savings', 'investment'];
+  // Проверка типа депозита - ИСПРАВЛЕНО: добавлен 'spending'
+  const validTypes = ['fixed', 'savings', 'investment', 'spending'];
   if (!type) {
     errors.push('Тип депозита обязателен');
   } else if (!validTypes.includes(type)) {
@@ -371,9 +371,16 @@ exports.validateDeposit = (req, res, next) => {
       errors.push('Некорректная дата окончания');
     }
 
+    // КРИТИЧЕСКИ ВАЖНО: проверяем даты корректно
     if (startDate) {
       const start = new Date(startDate);
-      if (end <= start) {
+      const endParsed = new Date(endDate);
+      
+      // Приводим даты к началу дня для корректного сравнения
+      start.setHours(0, 0, 0, 0);
+      endParsed.setHours(0, 0, 0, 0);
+      
+      if (endParsed <= start) {
         errors.push('Дата закрытия должна быть после даты открытия');
       }
     }
@@ -399,6 +406,7 @@ exports.validateDeposit = (req, res, next) => {
   }
 
   if (errors.length > 0) {
+    console.log('Validation errors:', errors);
     return res.status(400).json({
       success: false,
       message: 'Ошибка валидации',

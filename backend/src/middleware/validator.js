@@ -63,3 +63,69 @@ exports.validateCategory = [
   body('type').isIn(['expense', 'income']).withMessage('Некорректный тип категории'),
   validate
 ];
+
+// Bank validation
+exports.validateBank = [
+  body('name')
+    .trim()
+    .notEmpty().withMessage('Название банка обязательно')
+    .isLength({ max: 200 }).withMessage('Название не может быть длиннее 200 символов'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 }).withMessage('Описание не может быть длиннее 500 символов'),
+  body('isDefault')
+    .optional()
+    .isBoolean().withMessage('isDefault должен быть булевым значением'),
+  validate
+];
+
+// Currency validation
+exports.validateCurrency = [
+  body('code')
+    .trim()
+    .notEmpty().withMessage('Код валюты обязателен')
+    .isLength({ max: 10 }).withMessage('Код не может быть длиннее 10 символов')
+    .toUpperCase(),
+  body('name')
+    .trim()
+    .notEmpty().withMessage('Название валюты обязательно')
+    .isLength({ max: 100 }).withMessage('Название не может быть длиннее 100 символов'),
+  body('symbol')
+    .trim()
+    .notEmpty().withMessage('Символ валюты обязателен')
+    .isLength({ max: 10 }).withMessage('Символ не может быть длиннее 10 символов'),
+  body('isDefault')
+    .optional()
+    .isBoolean().withMessage('isDefault должен быть булевым значением'),
+  body('exchangeRate')
+    .optional()
+    .isFloat({ min: 0 }).withMessage('Курс обмена не может быть отрицательным'),
+  validate
+];
+
+// Utility Type validation
+exports.validateUtilityType = [
+  body('name')
+    .trim()
+    .notEmpty().withMessage('Название типа услуги обязательно')
+    .isLength({ max: 100 }).withMessage('Название не может быть длиннее 100 символов'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 }).withMessage('Описание не может быть длиннее 500 символов'),
+  body('icon')
+    .optional()
+    .trim(),
+  body('color')
+    .optional()
+    .trim()
+    .matches(/^#[0-9A-Fa-f]{6}$/).withMessage('Цвет должен быть в формате HEX (#RRGGBB)'),
+  body('isDefault')
+    .optional()
+    .isBoolean().withMessage('isDefault должен быть булевым значением'),
+  body('order')
+    .optional()
+    .isInt({ min: 0 }).withMessage('Порядок должен быть неотрицательным числом'),
+  validate
+];

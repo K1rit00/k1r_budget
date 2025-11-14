@@ -532,12 +532,12 @@ export const apiService = {
 
   // Utility Types (Типы коммунальных услуг)
   getUtilityTypes: async () => {
-    const response = await api.get('/utility-types');
+    const response = await api.get('/utilitytypes');  // Изменено с /utility-types
     return response.data;
   },
 
   getUtilityType: async (id: string) => {
-    const response = await api.get(`/utility-types/${id}`);
+    const response = await api.get(`/utilitytypes/${id}`);  // Изменено
     return response.data;
   },
 
@@ -548,7 +548,7 @@ export const apiService = {
     color?: string;
     order?: number;
   }) => {
-    const response = await api.post('/utility-types', data);
+    const response = await api.post('/utilitytypes', data);  // Изменено
     return response.data;
   },
 
@@ -559,15 +559,14 @@ export const apiService = {
     color?: string;
     order?: number;
   }) => {
-    const response = await api.put(`/utility-types/${id}`, data);
+    const response = await api.put(`/utilitytypes/${id}`, data);  // Изменено
     return response.data;
   },
 
   deleteUtilityType: async (id: string) => {
-    const response = await api.delete(`/utility-types/${id}`);
+    const response = await api.delete(`/utilitytypes/${id}`);  // Изменено
     return response.data;
   },
-
   // Deposit Transactions
   getDepositTransactions: async (params?: {
     depositId?: string;

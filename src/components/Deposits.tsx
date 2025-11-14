@@ -22,6 +22,13 @@ interface DepositStatistics {
   maturedDepositsCount: number;
 }
 
+interface Bank {
+  _id?: string;
+  id?: string;
+  name: string;
+  description?: string;
+}
+
 type DepositType = "fixed" | "savings" | "investment" | "spending";
 type TransactionType = "deposit" | "withdrawal" | "interest";
 
@@ -30,6 +37,7 @@ function Deposits() {
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [transactions, setTransactions] = useState<DepositTransaction[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
+  const [banks, setBanks] = useState<Bank[]>([]);
   const [statistics, setStatistics] = useState<DepositStatistics>({
     totalBalance: 0,
     totalInterestEarned: 0,
@@ -43,6 +51,7 @@ function Deposits() {
   const [editingDeposit, setEditingDeposit] = useState<Deposit | null>(null);
   const [selectedDepositId, setSelectedDepositId] = useState<string>("");
   const [transactionType, setTransactionType] = useState<TransactionType>("deposit");
+  const [selectedBankId, setSelectedBankId] = useState<string>("");
 
   // Вспомогательная функция для получения ID
   const getItemId = (item: any): string => {
@@ -57,16 +66,18 @@ function Deposits() {
     try {
       setLoading(true);
 
-      const [depositsResponse, transactionsResponse, incomesResponse, statsResponse] = await Promise.all([
+      const [depositsResponse, transactionsResponse, incomesResponse, statsResponse, banksResponse] = await Promise.all([
         apiService.getDeposits(),
         apiService.getDepositTransactions(),
         apiService.getIncome(),
-        apiService.getDepositStatistics()
+        apiService.getDepositStatistics(),
+        apiService.getBanks()
       ]);
 
       setDeposits(depositsResponse.data || []);
       setTransactions(transactionsResponse.data || []);
       setIncomes(incomesResponse.data || []);
+      setBanks(banksResponse.data || []);
       setStatistics(statsResponse.data || {
         totalBalance: 0,
         totalInterestEarned: 0,
@@ -157,8 +168,11 @@ function Deposits() {
 
   const handleDepositSubmit = async (formData: FormData) => {
     try {
-      const depositData = {
-        bankName: (formData.get("bankName") as string)?.trim(),
+      const bankId = formData.get("bankId") as string;
+      const selectedBank = banks.find(b => getItemId(b) === bankId);
+
+      const depositData: any = {
+        bankName: selectedBank?.name || (formData.get("bankName") as string)?.trim(),
         accountNumber: (formData.get("accountNumber") as string)?.trim(),
         amount: parseFloat(formData.get("amount") as string),
         interestRate: parseFloat(formData.get("interestRate") as string),
@@ -169,7 +183,9 @@ function Deposits() {
         description: (formData.get("description") as string)?.trim() || undefined
       };
 
+      // При редактировании сохраняем currentBalance
       if (editingDeposit) {
+        depositData.currentBalance = editingDeposit.currentBalance;
         const depositId = getItemId(editingDeposit);
         await apiService.updateDeposit(depositId, depositData);
         addNotification({ message: "Депозит успешно обновлен", type: "success" });
@@ -180,6 +196,7 @@ function Deposits() {
 
       setIsDepositDialogOpen(false);
       setEditingDeposit(null);
+      setSelectedBankId("");
       await loadData();
     } catch (error: unknown) {
       const err = error as {
@@ -207,7 +224,7 @@ function Deposits() {
         amount: parseFloat(formData.get("amount") as string),
         transactionDate: formData.get("transactionDate") as string,
         description: formData.get("description") as string || undefined,
-        incomeId: transactionType === "deposit" && incomeId ? incomeId : undefined
+        incomeId: transactionType === "deposit" && incomeId && incomeId !== "none" ? incomeId : undefined
       };
 
       await apiService.createDepositTransaction(transactionData);
@@ -381,14 +398,24 @@ function Deposits() {
                   </DialogHeader>
                   <form onSubmit={(e) => { e.preventDefault(); handleDepositSubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
                     <div>
-                      <Label htmlFor="bankName">Название банка</Label>
-                      <Input
-                        id="bankName"
-                        name="bankName"
-                        required
-                        defaultValue={editingDeposit?.bankName}
-                        placeholder="Например: Kaspi Bank"
-                      />
+                      <Label htmlFor="bankId">Банк</Label>
+                      <Select
+                        name="bankId"
+                        value={selectedBankId}
+                        onValueChange={setSelectedBankId}
+                        defaultValue={editingDeposit ? banks.find(b => b.name === editingDeposit.bankName) ? getItemId(banks.find(b => b.name === editingDeposit.bankName)!) : "" : ""}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Выберите банк" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {banks.map(bank => (
+                            <SelectItem key={getItemId(bank)} value={getItemId(bank)}>
+                              {bank.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div>
                       <Label htmlFor="accountNumber">Номер счета</Label>
@@ -483,6 +510,7 @@ function Deposits() {
                         onClick={() => {
                           setIsDepositDialogOpen(false);
                           setEditingDeposit(null);
+                          setSelectedBankId("");
                         }}
                       >
                         Отмена
@@ -543,6 +571,7 @@ function Deposits() {
                               size="sm"
                               onClick={() => {
                                 setEditingDeposit(deposit);
+                                setSelectedBankId(banks.find(b => b.name === deposit.bankName) ? getItemId(banks.find(b => b.name === deposit.bankName)!) : "");
                                 setIsDepositDialogOpen(true);
                               }}
                             >
@@ -634,6 +663,43 @@ function Deposits() {
               </DialogHeader>
               <form onSubmit={(e) => { e.preventDefault(); handleTransactionSubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
                 <div>
+                  <Label htmlFor="transactionType">Тип операции</Label>
+                  <Select
+                    name="transactionType"
+                    value={transactionType}
+                    onValueChange={(value) => setTransactionType(value as TransactionType)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Выберите тип операции" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="deposit">Пополнение</SelectItem>
+                      <SelectItem value="withdrawal">Снятие</SelectItem>
+                      <SelectItem value="interest">Проценты</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {transactionType === "deposit" && (
+                  <div>
+                    <Label htmlFor="incomeId">Источник дохода (опционально)</Label>
+                    <Select name="incomeId" defaultValue="none">
+                      <SelectTrigger>
+                        <SelectValue placeholder="Выберите источник дохода" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Не указан</SelectItem>
+                        {incomes.map(income => (
+                          <SelectItem key={getItemId(income)} value={getItemId(income)}>
+                            {income.source} - {income.amount.toLocaleString("kk-KZ")} ₸
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div>
                   <Label htmlFor="amount">Сумма (₸)</Label>
                   <Input
                     id="amount"
@@ -676,6 +742,7 @@ function Deposits() {
                     onClick={() => {
                       setIsTransactionDialogOpen(false);
                       setSelectedDepositId("");
+                      setTransactionType("deposit");
                     }}
                   >
                     Отмена
@@ -702,14 +769,19 @@ function Deposits() {
                     .sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime())
                     .map(transaction => {
                       const transactionId = getItemId(transaction);
-                      const deposit = deposits.find(d => getItemId(d) === transaction.depositId);
-                      const income = (transaction as any).incomeId ? incomes.find(i => getItemId(i) === (transaction as any).incomeId) : null;
-                      const typeNames: Record<TransactionType, string> = {
+                      const deposit = (transaction.depositId as unknown) as { bankName: string; accountNumber: string; type: string } | null;
+                      const income = (transaction.incomeId as unknown) as { source: string; amount: number; date: string } | null;
+                      const depositTypeNames: Record<string, string> = {
+                        fixed: "Срочный",
+                        savings: "Накопительный",
+                        investment: "Инвестиционный"
+                      };
+                      const transactionTypeNames: Record<TransactionType, string> = {
                         deposit: "Пополнение",
                         withdrawal: "Снятие",
                         interest: "Проценты"
                       };
-                      const typeColors: Record<TransactionType, "default" | "destructive" | "secondary"> = {
+                      const transactionTypeColors: Record<TransactionType, "default" | "destructive" | "secondary"> = {
                         deposit: "default",
                         withdrawal: "destructive",
                         interest: "secondary"
@@ -719,9 +791,11 @@ function Deposits() {
                         <div key={transactionId} className="flex items-center justify-between p-4 border rounded-lg">
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <h4 className="font-semibold">{deposit?.bankName || "Неизвестный депозит"}</h4>
-                              <Badge variant={typeColors[transaction.type]}>
-                                {typeNames[transaction.type]}
+                              <h4 className="font-semibold">
+                                {deposit?.bankName || "Депозит удален"} - {deposit?.accountNumber || "N/A"} ({depositTypeNames[deposit?.type || ""] || "Неизвестный"})
+                              </h4>
+                              <Badge variant={transactionTypeColors[transaction.type]}>
+                                {transactionTypeNames[transaction.type]}
                               </Badge>
                               {income && (
                                 <Badge variant="outline" className="text-blue-600 border-blue-600">

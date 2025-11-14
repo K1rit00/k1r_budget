@@ -19,7 +19,28 @@ exports.getDeposits = asyncHandler(async (req, res) => {
     query.type = type;
   }
   
-  const deposits = await Deposit.find(query).sort({ createdAt: -1 });
+  let deposits = await Deposit.find(query).sort({ createdAt: -1 });
+  
+  const today = new Date();
+  
+  for (let deposit of deposits) {
+    if (deposit.status === 'active' && 
+        new Date(deposit.endDate) <= today && 
+        deposit.autoRenewal) {
+      // Автоматическое продление
+      // Дата начала НЕ меняется - остается первоначальной
+      const newEndDate = new Date(deposit.endDate);
+      newEndDate.setFullYear(newEndDate.getFullYear() + 1);
+      
+      deposit.endDate = newEndDate;
+      deposit.status = 'active';
+      
+      await deposit.save();
+    }
+  }
+  
+  // Перезагружаем депозиты после возможных обновлений
+  deposits = await Deposit.find(query).sort({ createdAt: -1 });
   
   res.status(200).json({
     success: true,
@@ -82,6 +103,22 @@ exports.updateDeposit = asyncHandler(async (req, res) => {
     return res.status(404).json({
       success: false,
       message: 'Депозит не найден'
+    });
+  }
+  
+  // Если currentBalance не передан, сохраняем старое значение
+  if (req.body.currentBalance === undefined) {
+    req.body.currentBalance = deposit.currentBalance;
+  }
+  
+  // Дополнительная валидация дат
+  const startDate = req.body.startDate ? new Date(req.body.startDate) : new Date(deposit.startDate);
+  const endDate = req.body.endDate ? new Date(req.body.endDate) : new Date(deposit.endDate);
+  
+  if (endDate <= startDate) {
+    return res.status(400).json({
+      success: false,
+      message: 'Дата закрытия должна быть после даты открытия'
     });
   }
   
@@ -171,12 +208,11 @@ exports.renewDeposit = asyncHandler(async (req, res) => {
     });
   }
   
-  // Продлеваем на 1 год
-  const newStartDate = new Date();
-  const newEndDate = new Date();
+  // Продлеваем только дату окончания на 1 год
+  // Дата начала остается первоначальной
+  const newEndDate = new Date(deposit.endDate);
   newEndDate.setFullYear(newEndDate.getFullYear() + 1);
   
-  deposit.startDate = newStartDate;
   deposit.endDate = newEndDate;
   deposit.status = 'active';
   
@@ -211,7 +247,7 @@ exports.getTransactions = asyncHandler(async (req, res) => {
   }
   
   const transactions = await DepositTransaction.find(query)
-    .populate('depositId', 'bankName accountNumber')
+    .populate('depositId', 'bankName accountNumber type')
     .populate('incomeId', 'source amount date')
     .sort({ transactionDate: -1 });
   

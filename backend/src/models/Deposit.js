@@ -41,17 +41,14 @@ const depositSchema = new mongoose.Schema(
     },
     endDate: {
       type: Date,
-      required: [true, 'Дата закрытия обязательна'],
-      validate: {
-        validator: function(value) {
-          return value > this.startDate;
-        },
-        message: 'Дата закрытия должна быть после даты открытия'
-      }
+      required: [true, 'Дата закрытия обязательна']
     },
     type: {
       type: String,
-      enum: ['fixed', 'savings', 'investment'],
+      enum: {
+        values: ['fixed', 'savings', 'investment', 'spending'],
+        message: 'Недопустимый тип депозита'
+      },
       required: [true, 'Тип депозита обязателен']
     },
     autoRenewal: {
@@ -72,6 +69,37 @@ const depositSchema = new mongoose.Schema(
     timestamps: true
   }
 );
+
+// Валидация дат - выполняется перед сохранением
+depositSchema.pre('save', function(next) {
+  if (this.endDate && this.startDate) {
+    if (this.endDate <= this.startDate) {
+      return next(new Error('Дата закрытия должна быть после даты открытия'));
+    }
+  }
+  next();
+});
+
+// Валидация дат при обновлении через findOneAndUpdate
+depositSchema.pre('findOneAndUpdate', function(next) {
+  const update = this.getUpdate();
+  
+  // Получаем текущие значения или значения из update
+  const startDate = update.startDate || update.$set?.startDate;
+  const endDate = update.endDate || update.$set?.endDate;
+  
+  // Если обновляются обе даты, проверяем их
+  if (startDate && endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    if (end <= start) {
+      return next(new Error('Дата закрытия должна быть после даты открытия'));
+    }
+  }
+  
+  next();
+});
 
 // Индексы для оптимизации запросов
 depositSchema.index({ userId: 1, status: 1 });
