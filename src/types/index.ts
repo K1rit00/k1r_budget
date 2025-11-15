@@ -212,22 +212,24 @@ export interface MonthlyBudget {
 
 // Типы для депозитов
 export interface Deposit {
-  id: string;
-  title: string;
-  bankName?: string;
-  accountNumber?: string;
+  _id?: string;
+  id?: string;
+  userId: string;
+  name?: string; // НОВОЕ ПОЛЕ
+  bankName: string;
+  accountNumber: string;
   amount: number;
   currentBalance: number;
-  interestRate?: number;  
-  startDate?: string;    
-  endDate?: string;       
-  type: "fixed" | "savings" | "investment" | "spending";  
-  autoRenewal?: boolean;
-  isActive: boolean;
-  status?: "active" | "matured" | "closed";
+  interestRate: number;
+  startDate: string | Date;
+  endDate: string | Date;
+  type: 'fixed' | 'savings' | 'investment' | 'spending';
+  autoRenewal: boolean;
+  status: 'active' | 'matured' | 'closed';
   description?: string;
-  createdAt?: string;
-  updatedAt?: string;
+  lastInterestAccrued?: string | Date;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
 }
 
 export interface DepositTransaction {

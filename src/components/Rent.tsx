@@ -79,6 +79,16 @@ interface AvailableIncome {
   description?: string;
 }
 
+interface AvailableDeposit {
+  _id: string;
+  id: string;
+  name: string;
+  bankName: string;
+  accountNumber: string;
+  currentBalance: number;
+  type: string;
+}
+
 interface RentStatistics {
   totalExpenseThisMonth: number;
   activePropertiesCount: number;
@@ -113,7 +123,9 @@ function Rent() {
   const [selectedUtilitiesType, setSelectedUtilitiesType] = useState<"included" | "fixed" | "variable">("variable");
 
   const [availableIncomes, setAvailableIncomes] = useState<AvailableIncome[]>([]);
+  const [availableDeposits, setAvailableDeposits] = useState<AvailableDeposit[]>([]);
   const [selectedIncomeId, setSelectedIncomeId] = useState<string>("cash");
+  const [selectedSourceType, setSelectedSourceType] = useState<"cash" | "income" | "deposit">("cash");
 
   // Загрузка данных при монтировании
   useEffect(() => {
@@ -129,7 +141,8 @@ function Rent() {
         loadPayments(),
         loadStatistics(),
         loadUtilityTypes(),
-        loadAvailableIncomes() // Добавьте эту строку
+        loadAvailableIncomes(),
+        loadAvailableDeposits()
       ]);
     } catch (err: any) {
       console.error("Error loading data:", err);
@@ -140,10 +153,28 @@ function Rent() {
     }
   };
 
-  const loadProperties = async () => {
+const loadProperties = async () => {
     try {
       const response = await apiService.getRentProperties();
-      setProperties(response.data || []);
+      const properties = response.data || [];
+      
+      // Автоматически обновляем статус для объектов с истекшей датой окончания
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const updatedProperties = properties.map((property: RentProperty) => {
+        if (property.endDate && property.status === 'active') {
+          const endDate = new Date(property.endDate);
+          endDate.setHours(0, 0, 0, 0);
+          
+          if (endDate < today) {
+            return { ...property, status: 'completed' as const };
+          }
+        }
+        return property;
+      });
+      
+      setProperties(updatedProperties);
     } catch (error: any) {
       console.error("Error loading properties:", error);
       throw error;
@@ -156,8 +187,28 @@ function Rent() {
       setAvailableIncomes(response.data || []);
     } catch (error: any) {
       console.error("Error loading available incomes:", error);
-      // Не бросаем ошибку, можно продолжить работу без доходов
       setAvailableIncomes([]);
+    }
+  };
+
+  const loadAvailableDeposits = async () => {
+    try {
+      const response = await apiService.getDeposits({ status: 'active' });
+      const activeDeposits = (response.data || [])
+        .filter((d: any) => d.currentBalance > 0)
+        .map((d: any) => ({
+          _id: d._id,
+          id: d._id,
+          name: d.name || d.bankName,
+          bankName: d.bankName,
+          accountNumber: d.accountNumber,
+          currentBalance: d.currentBalance,
+          type: d.type
+        }));
+      setAvailableDeposits(activeDeposits);
+    } catch (error: any) {
+      console.error("Error loading available deposits:", error);
+      setAvailableDeposits([]);
     }
   };
 
@@ -177,7 +228,6 @@ function Rent() {
       setStatistics(response.data || null);
     } catch (error: any) {
       console.error("Error loading statistics:", error);
-      // Не бросаем ошибку, статистика не критична
     }
   };
 
@@ -187,7 +237,6 @@ function Rent() {
       setUtilityTypes(response.data || []);
     } catch (error: any) {
       console.error("Error loading utility types:", error);
-      // Не бросаем ошибку, можно продолжить работу без типов
     }
   };
 
@@ -236,17 +285,40 @@ function Rent() {
         totalUtilitiesAmount = filteredUtilities.reduce((sum, item) => sum + item.amount, 0);
       }
 
+      // Проверка и валидация дат
+      const start = new Date(startDateStr);
+      if (isNaN(start.getTime())) {
+        toast.error("Некорректный формат даты начала");
+        return;
+      }
+
+      let status: "active" | "completed" | "cancelled" = "active";
+
       if (endDateStr) {
-        const start = new Date(startDateStr);
         const end = new Date(endDateStr);
-        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-          toast.error("Некорректный формат дат");
+        if (isNaN(end.getTime())) {
+          toast.error("Некорректный формат даты окончания");
           return;
         }
         if (end <= start) {
           toast.error("Дата окончания должна быть после даты начала");
-          return; // Прерываем submit
+          return;
         }
+
+        // Проверяем, если дата окончания в прошлом, устанавливаем статус "completed"
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+
+        if (end < today) {
+          status = "completed";
+        }
+      }
+
+      // Если редактируем объект с завершенным статусом, запрещаем изменения
+      if (editingProperty && editingProperty.status === "completed") {
+        toast.error("Невозможно редактировать объект с завершенной арендой");
+        return;
       }
 
       const propertyData = {
@@ -256,7 +328,7 @@ function Rent() {
         deposit: parseFloat(formData.get("deposit") as string),
         startDate: formData.get("startDate") as string,
         endDate: (formData.get("endDate") as string) || undefined,
-        status: "active" as const,
+        status: status,
         utilitiesIncluded: utilitiesType === "included",
         utilitiesType: utilitiesType,
         utilities: filteredUtilities,
@@ -264,6 +336,7 @@ function Rent() {
         description: (formData.get("description") as string) || undefined,
         tenants: []
       };
+
       if (editingProperty) {
         await apiService.updateRentProperty(editingProperty._id, propertyData);
         toast.success("Объект недвижимости обновлен");
@@ -285,7 +358,6 @@ function Rent() {
       const errorMessage = err.response?.data?.message || "Ошибка сохранения объекта недвижимости";
       toast.error(errorMessage);
 
-      // Показываем детали ошибок валидации
       if (err.response?.data?.errors && Array.isArray(err.response.data.errors)) {
         err.response.data.errors.forEach((error: string) => {
           toast.error(error);
@@ -295,7 +367,6 @@ function Rent() {
       setSubmitting(false);
     }
   };
-
   // Обработчик создания платежа
   const handlePaymentSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -304,11 +375,18 @@ function Rent() {
       setSubmitting(true);
 
       const formData = new FormData(e.currentTarget);
-      const incomeId = formData.get("incomeId") as string;
+      const sourceId = formData.get("sourceId") as string;
+      const amount = parseFloat(formData.get("amount") as string);
+
+      // Извлекаем реальный ID депозита, убирая префикс "deposit-"
+      let actualSourceId = sourceId;
+      if (selectedSourceType === "deposit" && sourceId.startsWith("deposit-")) {
+        actualSourceId = sourceId.replace("deposit-", "");
+      }
 
       const paymentData: any = {
         propertyId: selectedPropertyId,
-        amount: parseFloat(formData.get("amount") as string),
+        amount: amount,
         paymentDate: formData.get("paymentDate") as string,
         status: "paid" as const,
         paymentType: selectedPaymentType as "rent" | "utilities" | "deposit" | "other",
@@ -317,9 +395,30 @@ function Rent() {
         receiptFileName: receiptFile?.name
       };
 
-      // Добавляем incomeId только если выбран доход (не наличные)
-      if (incomeId && incomeId !== "cash") {
-        paymentData.incomeId = incomeId;
+      // Добавляем incomeId или depositId в зависимости от типа источника
+      if (selectedSourceType === "income" && actualSourceId && actualSourceId !== "cash") {
+        paymentData.incomeId = actualSourceId;
+      } else if (selectedSourceType === "deposit" && actualSourceId) {
+        paymentData.depositId = actualSourceId;
+
+        // Создаем транзакцию снятия с депозита
+        const transactionDescription = `Оплата аренды: ${selectedPaymentType === "rent" ? "Аренда" :
+          selectedPaymentType === "utilities" ? "Коммунальные платежи" :
+            selectedPaymentType === "deposit" ? "Залог" : "Другое"
+          }`;
+
+        try {
+          await apiService.createDepositTransaction({
+            depositId: actualSourceId,
+            type: "withdrawal",
+            amount: amount,
+            transactionDate: formData.get("paymentDate") as string,
+            description: transactionDescription
+          });
+        } catch (depositError: any) {
+          console.error("Error creating deposit transaction:", depositError);
+          throw new Error(depositError.response?.data?.message || "Ошибка при снятии средств с депозита");
+        }
       }
 
       // Если это коммунальный платеж, добавляем utilityTypeId
@@ -336,7 +435,8 @@ function Rent() {
       resetPaymentForm();
       await loadPayments();
       await loadStatistics();
-      await loadAvailableIncomes(); // Обновляем доступные доходы
+      await loadAvailableIncomes();
+      await loadAvailableDeposits();
 
     } catch (err: any) {
       console.error("Error saving payment:", err);
@@ -402,7 +502,8 @@ function Rent() {
     setSelectedPropertyId("");
     setSelectedPaymentType("rent");
     setSelectedUtilityTypeId("");
-    setSelectedIncomeId("cash"); // Добавьте эту строку
+    setSelectedIncomeId("cash");
+    setSelectedSourceType("cash");
     setReceiptFile(null);
   };
 
@@ -460,7 +561,6 @@ function Rent() {
     setSelectedPaymentType(value);
     setSelectedUtilityTypeId("");
 
-    // Автоматически подставляем сумму для определенных типов платежей
     if (selectedPropertyId) {
       const property = properties.find(p => p._id === selectedPropertyId);
       if (property) {
@@ -480,7 +580,6 @@ function Rent() {
   const handleUtilityTypeChange = (utilityTypeId: string) => {
     setSelectedUtilityTypeId(utilityTypeId);
 
-    // Автоматически подставляем сумму из списка услуг объекта
     if (selectedPropertyId) {
       const property = properties.find(p => p._id === selectedPropertyId);
       if (property && property.utilities) {
@@ -495,7 +594,6 @@ function Rent() {
     }
   };
 
-  // Эффект для инициализации utility items при редактировании
   useEffect(() => {
     if (editingProperty && isPropertyDialogOpen) {
       if (editingProperty.utilities && editingProperty.utilities.length > 0) {
@@ -513,12 +611,9 @@ function Rent() {
     }
   }, [editingProperty, isPropertyDialogOpen]);
 
-  // Расчет данных для графика
   const getMonthlyExpenseData = () => {
-    // ВСЕГДА пересчитываем данные с учетом фиксированных платежей
     const monthlyData: Record<string, { month: string; rent: number; utilities: number; total: number }> = {};
 
-    // 1. Добавляем реальные платежи
     payments
       .filter(p => p.status === "paid")
       .forEach(payment => {
@@ -538,19 +633,15 @@ function Rent() {
         monthlyData[monthKey].total += payment.amount;
       });
 
-    // 2. Добавляем фиксированные коммунальные платежи для всех объектов (всегда, независимо от реальных платежей)
     properties.forEach(property => {
-      // Проверяем, что у объекта фиксированные коммунальные платежи
       if (property.utilitiesType === "fixed" && property.utilitiesAmount) {
         const startDate = new Date(property.startDate);
         const now = new Date();
 
-        // Определяем конечную дату для расчета (либо endDate, либо текущая дата)
         const calculationEndDate = property.endDate
           ? new Date(Math.min(new Date(property.endDate).getTime(), now.getTime()))
           : now;
 
-        // Проходим по всем месяцам от начала до конца аренды
         let currentDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
         const lastDate = new Date(calculationEndDate.getFullYear(), calculationEndDate.getMonth(), 1);
 
@@ -558,14 +649,12 @@ function Rent() {
           const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
           const monthName = currentDate.toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
 
-          // Всегда добавляем фиксированную сумму коммунальных платежей
           if (!monthlyData[monthKey]) {
             monthlyData[monthKey] = { month: monthName, rent: 0, utilities: 0, total: 0 };
           }
           monthlyData[monthKey].utilities += property.utilitiesAmount;
           monthlyData[monthKey].total += property.utilitiesAmount;
 
-          // Переходим к следующему месяцу
           currentDate.setMonth(currentDate.getMonth() + 1);
         }
       }
@@ -577,14 +666,13 @@ function Rent() {
       return new Date(`${aYear}-${aMonth}-01`).getTime() - new Date(`${bYear}-${bMonth}-01`).getTime();
     });
   };
-  // Получить название коммунальной услуги по ID
+
   const getUtilityTypeName = (utilityTypeId?: string) => {
     if (!utilityTypeId) return null;
     const utilityType = utilityTypes.find(ut => ut._id === utilityTypeId);
     return utilityType?.name;
   };
 
-  // Показываем индикатор загрузки
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -596,7 +684,6 @@ function Rent() {
     );
   }
 
-  // Показываем ошибку
   if (error && properties.length === 0) {
     return (
       <div className="space-y-4">
@@ -886,7 +973,6 @@ function Rent() {
                     </div>
                   </form>
                 </DialogContent>
-
               </Dialog>
             </CardHeader>
             <CardContent>
@@ -922,7 +1008,12 @@ function Rent() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            disabled={property.status === "completed"}
                             onClick={() => {
+                              if (property.status === "completed") {
+                                toast.error("Невозможно редактировать объект с завершенной арендой");
+                                return;
+                              }
                               setEditingProperty(property);
                               setSelectedUtilitiesType(property.utilitiesType || "variable");
                               if (property.utilitiesType === "fixed" && property.utilities && property.utilities.length > 0) {
@@ -930,7 +1021,7 @@ function Rent() {
                                   if (u.utilityTypeId) {
                                     return u;
                                   } else {
-                                    const matchingType = utilityTypes.find(ut => ut.name.toLowerCase() === u.name.toLowerCase()); // Игнорируем регистр для надежности
+                                    const matchingType = utilityTypes.find(ut => ut.name.toLowerCase() === u.name.toLowerCase());
                                     return {
                                       ...u,
                                       utilityTypeId: matchingType ? matchingType._id : undefined
@@ -1012,7 +1103,12 @@ function Rent() {
                         </span>
                         <Button
                           size="sm"
+                          disabled={property.status === "completed"}
                           onClick={() => {
+                            if (property.status === "completed") {
+                              toast.error("Невозможно добавить платеж для объекта с завершенной арендой");
+                              return;
+                            }
                             setSelectedPropertyId(property._id);
                             setIsPaymentDialogOpen(true);
                           }}
@@ -1058,12 +1154,22 @@ function Rent() {
                     </SelectContent>
                   </Select>
                 </div>
+
                 <div>
-                  <Label htmlFor="incomeId">Источник оплаты</Label>
+                  <Label htmlFor="sourceId">Источник оплаты</Label>
                   <Select
-                    name="incomeId"
+                    name="sourceId"
                     value={selectedIncomeId}
-                    onValueChange={setSelectedIncomeId}
+                    onValueChange={(value) => {
+                      setSelectedIncomeId(value);
+                      if (value === "cash") {
+                        setSelectedSourceType("cash");
+                      } else if (value.startsWith("deposit-")) {
+                        setSelectedSourceType("deposit");
+                      } else {
+                        setSelectedSourceType("income");
+                      }
+                    }}
                     defaultValue="cash"
                   >
                     <SelectTrigger>
@@ -1071,34 +1177,67 @@ function Rent() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="cash">Банкомат (наличка)</SelectItem>
-                      {availableIncomes.map(income => {
-                        const typeLabels: Record<string, string> = {
-                          salary: "Зарплата",
-                          bonus: "Бонус",
-                          freelance: "Фриланс",
-                          business: "Бизнес",
-                          investment: "Инвестиции",
-                          rental: "Аренда",
-                          gift: "Подарок",
-                          other: "Другое"
-                        };
 
-                        const typeLabel = typeLabels[income.type] || income.type;
+                      {availableIncomes.length > 0 && (
+                        <>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                            Доходы
+                          </div>
+                          {availableIncomes.map(income => {
+                            const typeLabels: Record<string, string> = {
+                              salary: "Зарплата",
+                              bonus: "Бонус",
+                              freelance: "Фриланс",
+                              business: "Бизнес",
+                              investment: "Инвестиции",
+                              rental: "Аренда",
+                              gift: "Подарок",
+                              other: "Другое"
+                            };
 
-                        return (
-                          <SelectItem key={getItemId(income)} value={getItemId(income)}>
-                            {income.source} ({typeLabel}) - Доступно: {income.availableAmount.toLocaleString("ru-RU")} ₸ (из {income.amount.toLocaleString("ru-RU")} ₸) - {new Date(income.date).toLocaleDateString("ru-RU")}
-                          </SelectItem>
-                        );
-                      })}
+                            const typeLabel = typeLabels[income.type] || income.type;
+
+                            return (
+                              <SelectItem key={getItemId(income)} value={getItemId(income)}>
+                                {income.source} ({typeLabel}) - Доступно: {income.availableAmount.toLocaleString("ru-RU")} ₸
+                              </SelectItem>
+                            );
+                          })}
+                        </>
+                      )}
+
+                      {availableDeposits.length > 0 && (
+                        <>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-2">
+                            Депозиты
+                          </div>
+                          {availableDeposits.map(deposit => {
+                            const depositTypeLabels: Record<string, string> = {
+                              fixed: "Срочный",
+                              savings: "Накопительный",
+                              investment: "Инвестиционный",
+                              spending: "Расходный"
+                            };
+
+                            const typeLabel = depositTypeLabels[deposit.type] || deposit.type;
+
+                            return (
+                              <SelectItem key={`deposit-${deposit.id}`} value={`deposit-${deposit.id}`}>
+                                {deposit.name} ({typeLabel}) - {deposit.currentBalance.toLocaleString("ru-RU")} ₸
+                              </SelectItem>
+                            );
+                          })}
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
-                  {availableIncomes.length === 0 && (
+                  {availableIncomes.length === 0 && availableDeposits.length === 0 && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      Нет доступных доходов. Все средства использованы или доходы отсутствуют.
+                      Нет доступных доходов и депозитов. Все средства использованы или отсутствуют.
                     </p>
                   )}
                 </div>
+
                 {selectedPaymentType === "utilities" && (
                   <div>
                     <Label htmlFor="utilityType">Коммунальная услуга *</Label>

@@ -7,6 +7,11 @@ const depositSchema = new mongoose.Schema(
       ref: 'User',
       required: [true, 'Пожалуйста, укажите пользователя']
     },
+    name: {
+      type: String,
+      trim: true,
+      maxlength: [200, 'Название депозита не может быть длиннее 200 символов']
+    },
     bankName: {
       type: String,
       required: [true, 'Название банка обязательно'],

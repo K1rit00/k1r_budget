@@ -112,6 +112,21 @@ rentPropertySchema.methods.getTotalAmount = function () {
   return this.rentAmount;
 };
 
+rentPropertySchema.pre('save', function(next) {
+  if (this.endDate && this.status === 'active') {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const endDate = new Date(this.endDate);
+    endDate.setHours(0, 0, 0, 0);
+    
+    if (endDate < today) {
+      this.status = 'completed';
+    }
+  }
+  next();
+});
+
 const RentProperty = mongoose.model('RentProperty', rentPropertySchema);
 
 module.exports = RentProperty;

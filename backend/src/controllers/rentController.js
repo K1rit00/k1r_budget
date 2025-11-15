@@ -22,10 +22,29 @@ exports.getRentProperties = asyncHandler(async (req, res) => {
   
   const properties = await RentProperty.find(query).sort({ createdAt: -1 });
   
+  // Автоматически обновляем статус для объектов с истекшей датой окончания
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const updatedProperties = await Promise.all(
+    properties.map(async (property) => {
+      if (property.endDate && property.status === 'active') {
+        const endDate = new Date(property.endDate);
+        endDate.setHours(0, 0, 0, 0);
+        
+        if (endDate < today) {
+          property.status = 'completed';
+          await property.save();
+        }
+      }
+      return property;
+    })
+  );
+  
   res.status(200).json({
     success: true,
-    count: properties.length,
-    data: properties
+    count: updatedProperties.length,
+    data: updatedProperties
   });
 });
 

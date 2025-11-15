@@ -191,6 +191,7 @@ function Deposits() {
       const selectedBank = banks.find(b => getItemId(b) === bankId);
 
       const depositData: any = {
+        name: (formData.get("name") as string)?.trim() || undefined, // НОВОЕ ПОЛЕ
         bankName: selectedBank?.name || (formData.get("bankName") as string)?.trim(),
         accountNumber: (formData.get("accountNumber") as string)?.trim(),
         amount: parseFloat(formData.get("amount") as string),
@@ -232,6 +233,7 @@ function Deposits() {
       });
     }
   };
+
 
   const handleTransactionSubmit = async (formData: FormData) => {
     try {
@@ -420,6 +422,15 @@ function Deposits() {
                   </DialogHeader>
                   <form onSubmit={(e) => { e.preventDefault(); handleDepositSubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
                     <div>
+                      <Label htmlFor="name">Название депозита</Label>
+                      <Input
+                        id="name"
+                        name="name"
+                        defaultValue={editingDeposit?.name}
+                        placeholder="Например: Накопления на отпуск"
+                      />
+                    </div>
+                    <div>
                       <Label htmlFor="bankId">Банк</Label>
                       <Select
                         name="bankId"
@@ -571,7 +582,7 @@ function Deposits() {
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <h4 className="font-semibold">{deposit.bankName}</h4>
+                              <h4 className="font-semibold">{deposit.name || deposit.bankName}</h4>
                               <Badge variant={deposit.status === "active" ? "default" : deposit.status === "matured" ? "secondary" : "outline"}>
                                 {deposit.status === "active" ? "Активный" : deposit.status === "matured" ? "Созрел" : "Закрыт"}
                               </Badge>
@@ -586,7 +597,7 @@ function Deposits() {
                               )}
                             </div>
                             <p className="text-sm text-muted-foreground">
-                              Счет: {deposit.accountNumber} • {deposit.interestRate}% годовых
+                              {deposit.name ? `${deposit.bankName} • ` : ''}Счет: {deposit.accountNumber} • {deposit.interestRate}% годовых
                             </p>
                           </div>
                           <div className="flex gap-2">
