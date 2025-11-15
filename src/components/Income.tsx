@@ -23,7 +23,7 @@ interface ApiIncome {
   amount: string;
   description?: string;
   date: string;
-  type: 'salary' | 'bonus' | 'investment' | 'freelance' | 'other';
+  type: any; // ИЗМЕНЕНО: было 'salary' | 'bonus' | ...
   isAutoCreated?: boolean;
   recurringIncomeId?: string;
   createdAt: string;
@@ -36,7 +36,7 @@ interface Income {
   amount: number;
   description?: string;
   date: string;
-  type: string;
+  type: IncomeCategory; // ИЗМЕНЕНО: было string
   isAutoCreated?: boolean;
   recurringIncomeId?: string;
 }
@@ -77,31 +77,23 @@ interface RecurringIncome {
   createdCount: number;
 }
 
-// Маппинг типов доходов для отображения
-const INCOME_TYPE_LABELS: Record<string, string> = {
-  salary: "Зарплата",
-  bonus: "Бонус",
-  investment: "Инвестиции",
-  freelance: "Фриланс",
-  other: "Другое"
-};
-
-const INCOME_TYPE_COLORS: Record<string, string> = {
-  salary: "#10b981",
-  bonus: "#3b82f6",
-  investment: "#8b5cf6",
-  freelance: "#f59e0b",
-  other: "#6b7280"
-};
+// Тип для категории дохода
+interface IncomeCategory {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+}
 
 function Income() {
   const { addNotification } = useAppActions();
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [recurringIncomes, setRecurringIncomes] = useState<RecurringIncome[]>([]);
+  const [incomeCategories, setIncomeCategories] = useState<IncomeCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  
+
   const [isIncomeDialogOpen, setIsIncomeDialogOpen] = useState(false);
   const [isRecurringDialogOpen, setIsRecurringDialogOpen] = useState(false);
   const [editingIncome, setEditingIncome] = useState<Income | null>(null);
@@ -112,46 +104,63 @@ function Income() {
     loadData();
   }, []);
 
-const loadData = async () => {
-  try {
-    setIsLoading(true);
-    await Promise.all([loadIncomes(), loadRecurringIncomes()]);
-    
-    // Автоматическая обработка после загрузки
-    await autoProcessRecurringIncomes();
-  } catch (error: any) {
-    console.error('Load data error:', error);
-    addNotification({ 
-      message: 'Ошибка загрузки данных', 
-      type: 'error' 
-    });
-  } finally {
-    setIsLoading(false);
-  }
-};
+  const loadData = async () => {
+    try {
+      setIsLoading(true);
+      await Promise.all([loadIncomes(), loadRecurringIncomes(), loadIncomeCategories()]);
 
-const autoProcessRecurringIncomes = async () => {
-  try {
-    const response = await apiService.processRecurringIncomes();
-    
-    if (response.success && response.created > 0) {
-      addNotification({ 
-        message: `🎉 Автоматически создано доходов: ${response.created}`, 
-        type: 'success' 
+      // Автоматическая обработка после загрузки
+      await autoProcessRecurringIncomes();
+    } catch (error: any) {
+      console.error('Load data error:', error);
+      addNotification({
+        message: 'Ошибка загрузки данных',
+        type: 'error'
       });
-      // Перезагружаем только доходы
-      await loadIncomes();
+    } finally {
+      setIsLoading(false);
     }
-  } catch (error: any) {
-    console.error('Auto process error:', error);
-    // Тихо игнорируем ошибки автоматической обработки
-  }
-};
+  };
+
+  const loadIncomeCategories = async () => {
+    try {
+      const response = await apiService.getCategories('income');
+
+      if (response.success) {
+        const mappedCategories = response.data.map((cat: any) => ({
+          id: cat._id,
+          name: cat.name,
+          icon: cat.icon || 'circle',
+          color: cat.color || '#6366f1',
+        }));
+        setIncomeCategories(mappedCategories);
+      }
+    } catch (error: any) {
+      console.error('Load income categories error:', error);
+      throw error;
+    }
+  };
+
+  const autoProcessRecurringIncomes = async () => {
+    try {
+      const response = await apiService.processRecurringIncomes();
+
+      if (response.success && response.created > 0) {
+        addNotification({
+          message: `🎉 Автоматически создано доходов: ${response.created}`,
+          type: 'success'
+        });
+        await loadIncomes();
+      }
+    } catch (error: any) {
+      console.error('Auto process error:', error);
+    }
+  };
 
   const loadIncomes = async () => {
     try {
       const response = await apiService.getIncome();
-      
+
       if (response.success) {
         const mappedIncomes = response.data.map((income: ApiIncome) => ({
           id: income._id,
@@ -159,7 +168,13 @@ const autoProcessRecurringIncomes = async () => {
           amount: parseFloat(income.amount),
           description: income.description,
           date: income.date,
-          type: income.type,
+          // ИЗМЕНЕНИЕ ЗДЕСЬ:
+          type: {
+            id: (income.type as any)._id,
+            name: (income.type as any).name,
+            icon: (income.type as any).icon || 'circle',
+            color: (income.type as any).color || '#6366f1',
+          },
           isAutoCreated: income.isAutoCreated || false,
           recurringIncomeId: income.recurringIncomeId,
         }));
@@ -174,7 +189,7 @@ const autoProcessRecurringIncomes = async () => {
   const loadRecurringIncomes = async () => {
     try {
       const response = await apiService.getRecurringIncomes();
-      
+
       if (response.success) {
         const mappedRecurring = response.data.map((rec: ApiRecurringIncome) => ({
           id: rec._id,
@@ -196,38 +211,36 @@ const autoProcessRecurringIncomes = async () => {
     }
   };
 
-  // Обработка регулярных доходов (автоматическое создание)
   const handleProcessRecurring = async () => {
     try {
       setIsProcessing(true);
       const response = await apiService.processRecurringIncomes();
-      
+
       if (response.success) {
         if (response.created > 0) {
-          addNotification({ 
-            message: response.message, 
-            type: 'success' 
+          addNotification({
+            message: response.message,
+            type: 'success'
           });
-          await loadData(); // Перезагружаем данные
+          await loadData();
         } else {
-          addNotification({ 
-            message: 'Нет доходов для автоматического создания', 
-            type: 'info' 
+          addNotification({
+            message: 'Нет доходов для автоматического создания',
+            type: 'info'
           });
         }
       }
     } catch (error: any) {
       console.error('Process recurring error:', error);
-      addNotification({ 
-        message: error.response?.data?.message || 'Ошибка обработки регулярных доходов', 
-        type: 'error' 
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка обработки регулярных доходов',
+        type: 'error'
       });
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Обработчики для обычных доходов
   const handleIncomeSubmit = async (formData: FormData) => {
     try {
       setIsSubmitting(true);
@@ -256,9 +269,9 @@ const autoProcessRecurringIncomes = async () => {
       }
     } catch (error: any) {
       console.error('Submit income error:', error);
-      addNotification({ 
-        message: error.response?.data?.message || 'Ошибка сохранения дохода', 
-        type: 'error' 
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка сохранения дохода',
+        type: 'error'
       });
     } finally {
       setIsSubmitting(false);
@@ -278,14 +291,13 @@ const autoProcessRecurringIncomes = async () => {
       }
     } catch (error: any) {
       console.error('Delete income error:', error);
-      addNotification({ 
-        message: error.response?.data?.message || 'Ошибка удаления дохода', 
-        type: 'error' 
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка удаления дохода',
+        type: 'error'
       });
     }
   };
 
-  // Обработчики для регулярных доходов
   const handleRecurringSubmit = async (formData: FormData) => {
     try {
       setIsSubmitting(true);
@@ -315,9 +327,9 @@ const autoProcessRecurringIncomes = async () => {
       }
     } catch (error: any) {
       console.error('Submit recurring error:', error);
-      addNotification({ 
-        message: error.response?.data?.message || 'Ошибка сохранения шаблона', 
-        type: 'error' 
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка сохранения шаблона',
+        type: 'error'
       });
     } finally {
       setIsSubmitting(false);
@@ -337,9 +349,9 @@ const autoProcessRecurringIncomes = async () => {
       }
     } catch (error: any) {
       console.error('Delete recurring error:', error);
-      addNotification({ 
-        message: error.response?.data?.message || 'Ошибка удаления шаблона', 
-        type: 'error' 
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка удаления шаблона',
+        type: 'error'
       });
     }
   };
@@ -353,11 +365,28 @@ const autoProcessRecurringIncomes = async () => {
       }
     } catch (error: any) {
       console.error('Toggle recurring error:', error);
-      addNotification({ 
-        message: error.response?.data?.message || 'Ошибка изменения статуса', 
-        type: 'error' 
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка изменения статуса',
+        type: 'error'
       });
     }
+  };
+
+  // Получение категории по ID
+  const getCategoryById = (id: string) => {
+    return incomeCategories.find(cat => cat.id === id);
+  };
+
+  // Получение имени категории
+  const getCategoryName = (id: string) => {
+    const category = getCategoryById(id);
+    return category?.name || id;
+  };
+
+  // Получение цвета категории
+  const getCategoryColor = (id: string) => {
+    const category = getCategoryById(id);
+    return category?.color || '#6b7280';
   };
 
   // Расчеты для статистики
@@ -365,7 +394,7 @@ const autoProcessRecurringIncomes = async () => {
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
-    
+
     return incomes
       .filter(income => {
         const incomeDate = new Date(income.date);
@@ -390,9 +419,9 @@ const autoProcessRecurringIncomes = async () => {
   // Данные для аналитики
   const getIncomeByType = () => {
     const typeTotals = incomes.reduce((acc, income) => {
-      const typeName = INCOME_TYPE_LABELS[income.type] || income.type;
-      const typeColor = INCOME_TYPE_COLORS[income.type] || "#6b7280";
-      
+      const typeName = income.type.name;      // ИЗМЕНЕНО: было getCategoryName(income.type)
+      const typeColor = income.type.color;   // ИЗМЕНЕНО: было getCategoryColor(income.type)
+
       if (!acc[typeName]) {
         acc[typeName] = { name: typeName, value: 0, color: typeColor };
       }
@@ -408,7 +437,7 @@ const autoProcessRecurringIncomes = async () => {
       const date = new Date(income.date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const monthName = date.toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
-      
+
       if (!acc[monthKey]) {
         acc[monthKey] = { month: monthName, amount: 0, sortKey: monthKey };
       }
@@ -502,57 +531,66 @@ const autoProcessRecurringIncomes = async () => {
                   <form onSubmit={(e) => { e.preventDefault(); handleIncomeSubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
                     <div>
                       <Label htmlFor="type">Тип дохода</Label>
-                      <Select name="type" defaultValue={editingIncome?.type || "salary"}>
+                      <Select
+                        name="type"
+                        defaultValue={editingIncome?.type.id || (incomeCategories[0]?.id || "")} // ИЗМЕНЕНО: было editingIncome?.type
+                      >
                         <SelectTrigger>
-                          <SelectValue placeholder="Выберите тип" />
+                          <SelectValue placeholder="Выберите категорию" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="salary">Зарплата</SelectItem>
-                          <SelectItem value="bonus">Бонус</SelectItem>
-                          <SelectItem value="investment">Инвестиции</SelectItem>
-                          <SelectItem value="freelance">Фриланс</SelectItem>
-                          <SelectItem value="other">Другое</SelectItem>
+                          {incomeCategories.length === 0 ? (
+                            <SelectItem value="no-categories" disabled>
+                              Нет доступных категорий
+                            </SelectItem>
+                          ) : (
+                            incomeCategories.map(category => (
+                              <SelectItem key={category.id} value={category.id}>
+                                {category.name}
+                              </SelectItem>
+                            ))
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
                     <div>
                       <Label htmlFor="amount">Сумма (₸)</Label>
-                      <Input 
-                        id="amount" 
-                        name="amount" 
-                        type="number" 
-                        step="0.01" 
-                        required 
+                      <Input
+                        id="amount"
+                        name="amount"
+                        type="number"
+                        step="0.01"
+                        required
                         defaultValue={editingIncome?.amount}
                         placeholder="0.00"
                       />
                     </div>
                     <div>
                       <Label htmlFor="source">Источник</Label>
-                      <Input 
-                        id="source" 
-                        name="source" 
-                        required 
+                      <Input
+                        id="source"
+                        name="source"
+                        required
                         defaultValue={editingIncome?.source}
                         placeholder="Название компании, проекта и т.д."
                       />
                     </div>
                     <div>
                       <Label htmlFor="date">Дата</Label>
-                      <Input 
-                        id="date" 
-                        name="date" 
-                        type="date" 
+                      <Input
+                        id="date"
+                        name="date"
+                        type="date"
                         className="date-input"
-                        required 
+                        required
                         defaultValue={editingIncome?.date ? new Date(editingIncome.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
                       />
                     </div>
                     <div>
                       <Label htmlFor="description">Описание</Label>
-                      <Textarea 
-                        id="description" 
-                        name="description" 
+                      <Textarea
+                        id="description"
+                        name="description"
                         defaultValue={editingIncome?.description}
                         placeholder="Дополнительная информация"
                         rows={3}
@@ -569,9 +607,9 @@ const autoProcessRecurringIncomes = async () => {
                           editingIncome ? "Обновить" : "Добавить"
                         )}
                       </Button>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
+                      <Button
+                        type="button"
+                        variant="outline"
                         onClick={() => {
                           setIsIncomeDialogOpen(false);
                           setEditingIncome(null);
@@ -609,11 +647,11 @@ const autoProcessRecurringIncomes = async () => {
                               </Badge>
                             )}
                             <Badge variant="outline" className="text-xs">
-                              {INCOME_TYPE_LABELS[income.type] || income.type}
+                              {income.type.name}
                             </Badge>
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            {new Date(income.date).toLocaleDateString("ru-RU", { 
+                            {new Date(income.date).toLocaleDateString("ru-RU", {
                               day: 'numeric',
                               month: 'long',
                               year: 'numeric'
@@ -697,46 +735,52 @@ const autoProcessRecurringIncomes = async () => {
                     <form onSubmit={(e) => { e.preventDefault(); handleRecurringSubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
                       <div>
                         <Label htmlFor="rec-type">Тип дохода</Label>
-                        <Select name="type" defaultValue={editingRecurring?.type || "salary"}>
+                        <Select name="type" defaultValue={editingRecurring?.type || (incomeCategories[0]?.id || "")}>
                           <SelectTrigger>
-                            <SelectValue placeholder="Выберите тип" />
+                            <SelectValue placeholder="Выберите категорию" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="salary">Зарплата</SelectItem>
-                            <SelectItem value="bonus">Бонус</SelectItem>
-                            <SelectItem value="investment">Инвестиции</SelectItem>
-                            <SelectItem value="freelance">Фриланс</SelectItem>
-                            <SelectItem value="other">Другое</SelectItem>
+                            {incomeCategories.length === 0 ? (
+                              <SelectItem value="no-categories" disabled>
+                                Нет доступных категорий
+                              </SelectItem>
+                            ) : (
+                              incomeCategories.map(category => (
+                                <SelectItem key={category.id} value={category.id}>
+                                  {category.name}
+                                </SelectItem>
+                              ))
+                            )}
                           </SelectContent>
                         </Select>
                       </div>
                       <div>
                         <Label htmlFor="rec-amount">Сумма (₸)</Label>
-                        <Input 
-                          id="rec-amount" 
-                          name="amount" 
-                          type="number" 
-                          step="0.01" 
-                          required 
+                        <Input
+                          id="rec-amount"
+                          name="amount"
+                          type="number"
+                          step="0.01"
+                          required
                           defaultValue={editingRecurring?.amount}
                           placeholder="0.00"
                         />
                       </div>
                       <div>
                         <Label htmlFor="rec-source">Источник</Label>
-                        <Input 
-                          id="rec-source" 
-                          name="source" 
-                          required 
+                        <Input
+                          id="rec-source"
+                          name="source"
+                          required
                           defaultValue={editingRecurring?.source}
                           placeholder="Название компании, проекта и т.д."
                         />
                       </div>
                       <div>
                         <Label htmlFor="recurringDay">День месяца для создания</Label>
-                        <Input 
-                          id="recurringDay" 
-                          name="recurringDay" 
+                        <Input
+                          id="recurringDay"
+                          name="recurringDay"
                           type="number"
                           min="1"
                           max="31"
@@ -749,9 +793,9 @@ const autoProcessRecurringIncomes = async () => {
                         </p>
                       </div>
                       <div className="flex items-center space-x-2 border p-3 rounded-lg bg-muted/30">
-                        <Checkbox 
-                          id="autoCreate" 
-                          name="autoCreate" 
+                        <Checkbox
+                          id="autoCreate"
+                          name="autoCreate"
                           defaultChecked={editingRecurring?.autoCreate !== false}
                         />
                         <Label htmlFor="autoCreate" className="font-medium cursor-pointer">
@@ -760,9 +804,9 @@ const autoProcessRecurringIncomes = async () => {
                       </div>
                       <div>
                         <Label htmlFor="rec-description">Описание</Label>
-                        <Textarea 
-                          id="rec-description" 
-                          name="description" 
+                        <Textarea
+                          id="rec-description"
+                          name="description"
                           defaultValue={editingRecurring?.description}
                           placeholder="Дополнительная информация"
                           rows={3}
@@ -779,9 +823,9 @@ const autoProcessRecurringIncomes = async () => {
                             editingRecurring ? "Обновить" : "Создать"
                           )}
                         </Button>
-                        <Button 
-                          type="button" 
-                          variant="outline" 
+                        <Button
+                          type="button"
+                          variant="outline"
                           onClick={() => {
                             setIsRecurringDialogOpen(false);
                             setEditingRecurring(null);
@@ -802,12 +846,12 @@ const autoProcessRecurringIncomes = async () => {
                   <AlertCircle className="h-4 w-4" />
                   <AlertTitle>Автоматическое создание</AlertTitle>
                   <AlertDescription>
-                    Нажмите кнопку "Запустить" для проверки и создания доходов из активных шаблонов, 
+                    Нажмите кнопку "Запустить" для проверки и создания доходов из активных шаблонов,
                     или дождитесь автоматической обработки при входе в систему.
                   </AlertDescription>
                 </Alert>
               )}
-              
+
               <div className="space-y-4">
                 {recurringIncomes.length === 0 ? (
                   <div className="text-center py-12">
@@ -820,13 +864,12 @@ const autoProcessRecurringIncomes = async () => {
                   recurringIncomes
                     .sort((a, b) => a.recurringDay - b.recurringDay)
                     .map(recurring => (
-                      <div 
-                        key={recurring.id} 
-                        className={`flex items-center justify-between p-4 border rounded-lg transition-colors ${
-                          recurring.isActive 
-                            ? 'bg-purple-50/50 dark:bg-purple-950/10 hover:bg-purple-100/50 dark:hover:bg-purple-950/20' 
+                      <div
+                        key={recurring.id}
+                        className={`flex items-center justify-between p-4 border rounded-lg transition-colors ${recurring.isActive
+                            ? 'bg-purple-50/50 dark:bg-purple-950/10 hover:bg-purple-100/50 dark:hover:bg-purple-950/20'
                             : 'bg-muted/30 opacity-60'
-                        }`}
+                          }`}
                       >
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
@@ -836,7 +879,7 @@ const autoProcessRecurringIncomes = async () => {
                               {recurring.isActive ? "Активен" : "Неактивен"}
                             </Badge>
                             <Badge variant="outline" className="text-xs">
-                              {INCOME_TYPE_LABELS[recurring.type] || recurring.type}
+                              {getCategoryName(recurring.type)}
                             </Badge>
                           </div>
                           <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -986,13 +1029,13 @@ const autoProcessRecurringIncomes = async () => {
                       .map(recurring => (
                         <div key={recurring.id} className="flex items-center justify-between p-3 border rounded-lg">
                           <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center`} style={{ backgroundColor: `${INCOME_TYPE_COLORS[recurring.type]}20` }}>
-                              <Briefcase className="w-5 h-5" style={{ color: INCOME_TYPE_COLORS[recurring.type] }} />
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center`} style={{ backgroundColor: `${getCategoryColor(recurring.type)}20` }}>
+                              <Briefcase className="w-5 h-5" style={{ color: getCategoryColor(recurring.type) }} />
                             </div>
                             <div>
                               <p className="font-medium">{recurring.source}</p>
                               <p className="text-xs text-muted-foreground">
-                                Каждое {recurring.recurringDay} число • {INCOME_TYPE_LABELS[recurring.type]}
+                                Каждое {recurring.recurringDay} число • {getCategoryName(recurring.type)}
                               </p>
                             </div>
                           </div>

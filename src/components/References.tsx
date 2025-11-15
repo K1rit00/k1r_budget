@@ -6,8 +6,9 @@ import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { useAppActions } from "../contexts/AppContext";
-import { apiService } from "../services/api";
+import { apiService } from "../services/api"; // Import real API service
+
+const addNotification = (msg: any) => console.log(msg);
 
 interface Bank {
   _id: string;
@@ -19,11 +20,20 @@ interface Bank {
 interface UtilityType {
   _id: string;
   name: string;
+  description?: string;
   isDefault?: boolean;
 }
 
+interface Category {
+  _id: string;
+  name: string;
+  type: 'expense' | 'income';
+  description?: string;
+  isDefault?: boolean;
+  order?: number;
+}
+
 function References() {
-  const { addNotification } = useAppActions();
   const [activeTab, setActiveTab] = useState("banks");
 
   // Banks state
@@ -37,6 +47,14 @@ function References() {
   const [isUtilityDialogOpen, setIsUtilityDialogOpen] = useState(false);
   const [editingUtility, setEditingUtility] = useState<UtilityType | null>(null);
   const [loadingUtilities, setLoadingUtilities] = useState(false);
+
+  // Categories state
+  const [incomeCategories, setIncomeCategories] = useState<Category[]>([]);
+  const [expenseCategories, setExpenseCategories] = useState<Category[]>([]);
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [categoryType, setCategoryType] = useState<'income' | 'expense'>('income');
 
   // Load Banks
   const loadBanks = async () => {
@@ -74,12 +92,38 @@ function References() {
     }
   };
 
+  // Load Categories
+  const loadCategories = async (type: 'income' | 'expense') => {
+    try {
+      setLoadingCategories(true);
+      const response = await apiService.getCategories(type);
+      if (response.success) {
+        if (type === 'income') {
+          setIncomeCategories(response.data);
+        } else {
+          setExpenseCategories(response.data);
+        }
+      }
+    } catch (error: any) {
+      addNotification({
+        message: error.response?.data?.message || "Ошибка загрузки категорий",
+        type: "error"
+      });
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
   // Load data when tab changes
   useEffect(() => {
     if (activeTab === "banks") {
       loadBanks();
     } else if (activeTab === "utilities") {
       loadUtilityTypes();
+    } else if (activeTab === "income") {
+      loadCategories('income');
+    } else if (activeTab === "expenses") {
+      loadCategories('expense');
     }
   }, [activeTab]);
 
@@ -140,7 +184,8 @@ function References() {
     const formData = new FormData(e.currentTarget);
 
     const utilityData = {
-      name: formData.get("name") as string
+      name: formData.get("name") as string,
+      description: formData.get("description") as string || undefined
     };
 
     try {
@@ -184,13 +229,70 @@ function References() {
     }
   };
 
+  // Category handlers
+  const handleCategorySubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+
+    const categoryData = {
+      name: formData.get("name") as string,
+      type: categoryType,
+      description: formData.get("description") as string || undefined,
+    };
+
+    try {
+      if (editingCategory) {
+        const response = await apiService.updateCategory(editingCategory._id, categoryData);
+        if (response.success) {
+          addNotification({ message: "Категория обновлена", type: "success" });
+          loadCategories(categoryType);
+        }
+      } else {
+        const response = await apiService.createCategory(categoryData);
+        if (response.success) {
+          addNotification({ message: "Категория добавлена", type: "success" });
+          loadCategories(categoryType);
+        }
+      }
+      setIsCategoryDialogOpen(false);
+      setEditingCategory(null);
+    } catch (error: any) {
+      addNotification({
+        message: error.response?.data?.message || "Ошибка сохранения категории",
+        type: "error"
+      });
+    }
+  };
+
+  const deleteCategory = async (id: string, type: 'income' | 'expense') => {
+    if (!confirm("Вы уверены, что хотите удалить эту категорию?")) return;
+
+    try {
+      const response = await apiService.deleteCategory(id);
+      if (response.success) {
+        addNotification({ message: "Категория удалена", type: "info" });
+        loadCategories(type);
+      }
+    } catch (error: any) {
+      addNotification({
+        message: error.response?.data?.message || "Ошибка удаления категории",
+        type: "error"
+      });
+    }
+  };
+
+  const openCategoryDialog = (type: 'income' | 'expense', category?: Category) => {
+    setCategoryType(type);
+    setEditingCategory(category || null);
+    setIsCategoryDialogOpen(true);
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="flex w-full gap-2">
           <TabsTrigger value="banks">Банки</TabsTrigger>
           <TabsTrigger value="utilities">Комм. услуги</TabsTrigger>
-          <TabsTrigger value="budget">Бюджет</TabsTrigger>
           <TabsTrigger value="income">Доходы</TabsTrigger>
           <TabsTrigger value="expenses">Расходы</TabsTrigger>
         </TabsList>
@@ -331,6 +433,15 @@ function References() {
                         placeholder="Например: Электричество"
                       />
                     </div>
+                    <div>
+                      <Label htmlFor="utility-description">Описание (опционально)</Label>
+                      <Input
+                        id="utility-description"
+                        name="description"
+                        defaultValue={editingUtility?.description}
+                        placeholder="Дополнительная информация"
+                      />
+                    </div>
                     <div className="flex gap-2">
                       <Button type="submit" className="flex-1">
                         {editingUtility ? "Обновить" : "Добавить"}
@@ -361,57 +472,39 @@ function References() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {utilityTypes.map((utility, index) => {
-                    return (
-                      <div key={utility._id} className="flex items-center justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
-                        <div className="flex-1">
-                          <h4 className="font-medium">{utility.name}</h4>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setEditingUtility(utility);
-                              setIsUtilityDialogOpen(true);
-                            }}
-                            disabled={utility.isDefault}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteUtilityType(utility._id)}
-                            disabled={utility.isDefault}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
+                  {utilityTypes.map(utility => (
+                    <div key={utility._id} className="flex items-center justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
+                      <div className="flex-1">
+                        <h4 className="font-medium">{utility.name}</h4>
+                        {utility.description && (
+                          <p className="text-sm text-muted-foreground">{utility.description}</p>
+                        )}
                       </div>
-                    );
-                  })}
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditingUtility(utility);
+                            setIsUtilityDialogOpen(true);
+                          }}
+                          disabled={utility.isDefault}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteUtilityType(utility._id)}
+                          disabled={utility.isDefault}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* БЮДЖЕТ */}
-        <TabsContent value="budget" className="mt-6">
-          <Card className="rounded-2xl">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="w-5 h-5" />
-                Управление бюджетом
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8">
-                <DollarSign className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                <p className="text-muted-foreground">Настройка бюджета и лимитов</p>
-                <p className="text-sm text-muted-foreground mt-2">Функционал в разработке</p>
-              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -419,18 +512,102 @@ function References() {
         {/* ДОХОДЫ */}
         <TabsContent value="income" className="mt-6">
           <Card className="rounded-2xl">
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="w-5 h-5" />
                 Категории доходов
               </CardTitle>
+              <Dialog open={isCategoryDialogOpen && categoryType === 'income'} onOpenChange={setIsCategoryDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button onClick={() => openCategoryDialog('income')}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Добавить категорию
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>{editingCategory ? "Редактировать категорию" : "Добавить категорию доходов"}</DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleCategorySubmit} className="space-y-4">
+                    <div>
+                      <Label htmlFor="category-name">Название</Label>
+                      <Input
+                        id="category-name"
+                        name="name"
+                        required
+                        defaultValue={editingCategory?.name}
+                        placeholder="Например: Зарплата"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="description">Описание (опционально)</Label>
+                      <Input
+                        id="description"
+                        name="description"
+                        defaultValue={editingCategory?.description}
+                        placeholder="Дополнительная информация"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button type="submit" className="flex-1">
+                        {editingCategory ? "Обновить" : "Добавить"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setIsCategoryDialogOpen(false);
+                          setEditingCategory(null);
+                        }}
+                      >
+                        Отмена
+                      </Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8">
-                <TrendingUp className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                <p className="text-muted-foreground">Управление категориями доходов</p>
-                <p className="text-sm text-muted-foreground mt-2">Функционал в разработке</p>
-              </div>
+              {loadingCategories ? (
+                <div className="text-center py-8">Загрузка...</div>
+              ) : incomeCategories.length === 0 ? (
+                <div className="text-center py-12">
+                  <TrendingUp className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
+                  <p className="text-muted-foreground">Нет категорий доходов</p>
+                  <p className="text-sm text-muted-foreground mt-2">Добавьте категории для классификации доходов</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {incomeCategories.map(category => (
+                    <div key={category._id} className="flex items-center justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
+                      <div className="flex-1">
+                        <h4 className="font-medium">{category.name}</h4>
+                        {category.description && (
+                          <p className="text-sm text-muted-foreground">{category.description}</p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openCategoryDialog('income', category)}
+                          disabled={category.isDefault}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteCategory(category._id, 'income')}
+                          disabled={category.isDefault}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -438,18 +615,102 @@ function References() {
         {/* РАСХОДЫ */}
         <TabsContent value="expenses" className="mt-6">
           <Card className="rounded-2xl">
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-2">
                 <TrendingDown className="w-5 h-5" />
                 Категории расходов
               </CardTitle>
+              <Dialog open={isCategoryDialogOpen && categoryType === 'expense'} onOpenChange={setIsCategoryDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button onClick={() => openCategoryDialog('expense')}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Добавить категорию
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>{editingCategory ? "Редактировать категорию" : "Добавить категорию расходов"}</DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleCategorySubmit} className="space-y-4">
+                    <div>
+                      <Label htmlFor="category-name-expense">Название</Label>
+                      <Input
+                        id="category-name-expense"
+                        name="name"
+                        required
+                        defaultValue={editingCategory?.name}
+                        placeholder="Например: Продукты"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="description-expense">Описание (опционально)</Label>
+                      <Input
+                        id="description-expense"
+                        name="description"
+                        defaultValue={editingCategory?.description}
+                        placeholder="Дополнительная информация"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button type="submit" className="flex-1">
+                        {editingCategory ? "Обновить" : "Добавить"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setIsCategoryDialogOpen(false);
+                          setEditingCategory(null);
+                        }}
+                      >
+                        Отмена
+                      </Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8">
-                <TrendingDown className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                <p className="text-muted-foreground">Управление категориями расходов</p>
-                <p className="text-sm text-muted-foreground mt-2">Функционал в разработке</p>
-              </div>
+              {loadingCategories ? (
+                <div className="text-center py-8">Загрузка...</div>
+              ) : expenseCategories.length === 0 ? (
+                <div className="text-center py-12">
+                  <TrendingDown className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
+                  <p className="text-muted-foreground">Нет категорий расходов</p>
+                  <p className="text-sm text-muted-foreground mt-2">Добавьте категории для классификации расходов</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {expenseCategories.map(category => (
+                    <div key={category._id} className="flex items-center justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
+                      <div className="flex-1">
+                        <h4 className="font-medium">{category.name}</h4>
+                        {category.description && (
+                          <p className="text-sm text-muted-foreground">{category.description}</p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openCategoryDialog('expense', category)}
+                          disabled={category.isDefault}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteCategory(category._id, 'expense')}
+                          disabled={category.isDefault}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
