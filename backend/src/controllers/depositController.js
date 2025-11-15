@@ -1,7 +1,37 @@
 const Deposit = require('../models/Deposit');
 const DepositTransaction = require('../models/DepositTransaction');
 const Income = require('../models/Income');
+const IncomeUsage = require('../models/IncomeUsage');
 const asyncHandler = require('../middleware/asyncHandler');
+
+const days30_360 = (start, end) => {
+  let y1 = start.getFullYear();
+  let m1 = start.getMonth() + 1;
+  let d1 = start.getDate();
+  let y2 = end.getFullYear();
+  let m2 = end.getMonth() + 1;
+  let d2 = end.getDate();
+
+  if (d1 === 31) d1 = 30;
+  if (d2 === 31 && d1 === 30) d2 = 30;
+
+  return (y2 - y1) * 360 + (m2 - m1) * 30 + (d2 - d1);
+};
+
+// Вспомогательная функция для получения доступной суммы дохода
+const getAvailableIncomeAmount = async (incomeId, userId) => {
+  const income = await Income.findOne({ _id: incomeId, userId });
+  if (!income) return 0;
+
+  // Получаем все использования этого дохода
+  const usages = await IncomeUsage.find({ incomeId, userId });
+  const totalUsed = usages.reduce((sum, usage) => sum + usage.usedAmount, 0);
+
+  // Парсим сумму дохода (она может быть зашифрована, но после расшифровки это строка)
+  const incomeAmount = parseFloat(income.amount) || 0;
+  
+  return Math.max(0, incomeAmount - totalUsed);
+};
 
 // @desc    Get all deposits
 // @route   GET /api/v1/deposits
@@ -23,23 +53,65 @@ exports.getDeposits = asyncHandler(async (req, res) => {
   
   const today = new Date();
   
+  // 1. Начисление процентов для active депозитов
   for (let deposit of deposits) {
-    if (deposit.status === 'active' && 
-        new Date(deposit.endDate) <= today && 
-        deposit.autoRenewal) {
-      // Автоматическое продление
-      // Дата начала НЕ меняется - остается первоначальной
-      const newEndDate = new Date(deposit.endDate);
-      newEndDate.setFullYear(newEndDate.getFullYear() + 1);
+    if (deposit.status !== 'active' || !deposit.lastInterestAccrued) continue;
+    
+    let lastAccrued = new Date(deposit.lastInterestAccrued);
+    let nextAccrualDate = new Date(lastAccrued.getFullYear(), lastAccrued.getMonth() + 1, 1);
+    
+    const endDateObj = new Date(deposit.endDate);
+    const createdAt = new Date(deposit.createdAt);
+    
+    while (nextAccrualDate <= today && nextAccrualDate <= endDateObj) {
+      if (nextAccrualDate < createdAt) {
+        nextAccrualDate = new Date(nextAccrualDate.getFullYear(), nextAccrualDate.getMonth() + 1, 1);
+        continue;
+      }
       
-      deposit.endDate = newEndDate;
-      deposit.status = 'active';
+      const monthlyRate = deposit.interestRate / 12 / 100;
+      const interestAmount = Math.round(deposit.currentBalance * monthlyRate * 100) / 100;
       
-      await deposit.save();
+      if (interestAmount <= 0) break;
+      
+      const transaction = new DepositTransaction({
+        userId: req.user.id,
+        depositId: deposit._id,
+        type: 'interest',
+        amount: interestAmount,
+        transactionDate: nextAccrualDate,
+        description: 'Автоматическое начисление процентов'
+      });
+      await transaction.save();
+      
+      deposit.currentBalance += interestAmount;
+      deposit.lastInterestAccrued = nextAccrualDate;
+      
+      nextAccrualDate = new Date(nextAccrualDate.getFullYear(), nextAccrualDate.getMonth() + 1, 1);
+    }
+    
+    await deposit.save();
+  }
+  
+  // 2. Проверка maturity и autoRenewal
+  for (let deposit of deposits) {
+    const endDateObj = new Date(deposit.endDate);
+    if (deposit.status === 'active' && endDateObj <= today) {
+      if (deposit.autoRenewal) {
+        const newEndDate = new Date(deposit.endDate);
+        newEndDate.setFullYear(newEndDate.getFullYear() + 1);
+        
+        deposit.endDate = newEndDate;
+        deposit.status = 'active';
+        
+        await deposit.save();
+      } else {
+        deposit.status = 'matured';
+        await deposit.save();
+      }
     }
   }
   
-  // Перезагружаем депозиты после возможных обновлений
   deposits = await Deposit.find(query).sort({ createdAt: -1 });
   
   res.status(200).json({
@@ -77,7 +149,6 @@ exports.getDeposit = asyncHandler(async (req, res) => {
 exports.createDeposit = asyncHandler(async (req, res) => {
   req.body.userId = req.user.id;
   
-  // Устанавливаем currentBalance равным начальной сумме при создании
   if (!req.body.currentBalance) {
     req.body.currentBalance = req.body.amount;
   }
@@ -106,12 +177,10 @@ exports.updateDeposit = asyncHandler(async (req, res) => {
     });
   }
   
-  // Если currentBalance не передан, сохраняем старое значение
   if (req.body.currentBalance === undefined) {
     req.body.currentBalance = deposit.currentBalance;
   }
   
-  // Дополнительная валидация дат
   const startDate = req.body.startDate ? new Date(req.body.startDate) : new Date(deposit.startDate);
   const endDate = req.body.endDate ? new Date(req.body.endDate) : new Date(deposit.endDate);
   
@@ -153,7 +222,20 @@ exports.deleteDeposit = asyncHandler(async (req, res) => {
     });
   }
   
-  // Удаляем также все связанные транзакции
+  // Удаляем все связанные транзакции
+  const transactions = await DepositTransaction.find({ 
+    depositId: req.params.id,
+    userId: req.user.id 
+  });
+  
+  // Удаляем все использования доходов, связанные с этими транзакциями
+  for (const transaction of transactions) {
+    await IncomeUsage.deleteMany({
+      depositTransactionId: transaction._id,
+      userId: req.user.id
+    });
+  }
+  
   await DepositTransaction.deleteMany({ 
     depositId: req.params.id,
     userId: req.user.id 
@@ -208,8 +290,6 @@ exports.renewDeposit = asyncHandler(async (req, res) => {
     });
   }
   
-  // Продлеваем только дату окончания на 1 год
-  // Дата начала остается первоначальной
   const newEndDate = new Date(deposit.endDate);
   newEndDate.setFullYear(newEndDate.getFullYear() + 1);
   
@@ -288,7 +368,6 @@ exports.getTransaction = asyncHandler(async (req, res) => {
 exports.createTransaction = asyncHandler(async (req, res) => {
   req.body.userId = req.user.id;
   
-  // Проверяем, что депозит принадлежит пользователю
   const deposit = await Deposit.findOne({
     _id: req.body.depositId,
     userId: req.user.id
@@ -309,23 +388,48 @@ exports.createTransaction = asyncHandler(async (req, res) => {
     });
   }
   
-  // Проверяем существование дохода, если указан incomeId
-  if (req.body.incomeId) {
-    const income = await Income.findOne({
+  let incomeToUse = null;
+  
+  // Обработка связи с доходом (только для пополнений)
+  if (req.body.type === 'deposit' && req.body.incomeId && req.body.incomeId !== 'none') {
+    incomeToUse = await Income.findOne({
       _id: req.body.incomeId,
       userId: req.user.id
     });
     
-    if (!income) {
+    if (!incomeToUse) {
       return res.status(404).json({
         success: false,
         message: 'Доход не найден'
+      });
+    }
+    
+    // Проверяем доступную сумму дохода
+    const availableAmount = await getAvailableIncomeAmount(req.body.incomeId, req.user.id);
+    
+    if (req.body.amount > availableAmount) {
+      return res.status(400).json({
+        success: false,
+        message: `Недостаточно средств в выбранном доходе. Доступно: ${availableAmount.toLocaleString('kk-KZ')} ₸`
       });
     }
   }
   
   // Создаем транзакцию
   const transaction = await DepositTransaction.create(req.body);
+  
+  // Если использовался доход, создаем запись об использовании
+  if (incomeToUse && req.body.type === 'deposit') {
+    await IncomeUsage.create({
+      userId: req.user.id,
+      incomeId: req.body.incomeId,
+      usedAmount: req.body.amount,
+      usageType: 'deposit',
+      depositTransactionId: transaction._id,
+      description: `Пополнение депозита ${deposit.bankName} - ${deposit.accountNumber}`,
+      usageDate: req.body.transactionDate || new Date()
+    });
+  }
   
   // Обновляем баланс депозита
   if (req.body.type === 'deposit' || req.body.type === 'interest') {
@@ -336,7 +440,6 @@ exports.createTransaction = asyncHandler(async (req, res) => {
   
   await deposit.save();
   
-  // Получаем транзакцию с populate
   const populatedTransaction = await DepositTransaction.findById(transaction._id)
     .populate('depositId', 'bankName accountNumber')
     .populate('incomeId', 'source amount date');
@@ -372,6 +475,14 @@ exports.updateTransaction = asyncHandler(async (req, res) => {
     deposit.currentBalance += transaction.amount;
   }
   
+  // Если была связь с доходом, откатываем использование
+  if (transaction.incomeId) {
+    await IncomeUsage.deleteMany({
+      depositTransactionId: transaction._id,
+      userId: req.user.id
+    });
+  }
+  
   // Применяем новую транзакцию
   const newAmount = req.body.amount || transaction.amount;
   const newType = req.body.type || transaction.type;
@@ -386,6 +497,28 @@ exports.updateTransaction = asyncHandler(async (req, res) => {
       });
     }
     deposit.currentBalance -= newAmount;
+  }
+  
+  // Если указан новый доход
+  if (req.body.incomeId && req.body.incomeId !== 'none' && newType === 'deposit') {
+    const availableAmount = await getAvailableIncomeAmount(req.body.incomeId, req.user.id);
+    
+    if (newAmount > availableAmount) {
+      return res.status(400).json({
+        success: false,
+        message: `Недостаточно средств в выбранном доходе. Доступно: ${availableAmount.toLocaleString('kk-KZ')} ₸`
+      });
+    }
+    
+    await IncomeUsage.create({
+      userId: req.user.id,
+      incomeId: req.body.incomeId,
+      usedAmount: newAmount,
+      usageType: 'deposit',
+      depositTransactionId: transaction._id,
+      description: `Обновлено: Пополнение депозита`,
+      usageDate: req.body.transactionDate || transaction.transactionDate
+    });
   }
   
   await deposit.save();
@@ -423,6 +556,12 @@ exports.deleteTransaction = asyncHandler(async (req, res) => {
     });
   }
   
+  // Удаляем использование дохода
+  await IncomeUsage.deleteMany({
+    depositTransactionId: transaction._id,
+    userId: req.user.id
+  });
+  
   // Откатываем транзакцию из баланса депозита
   const deposit = await Deposit.findById(transaction.depositId);
   
@@ -450,15 +589,12 @@ exports.deleteTransaction = asyncHandler(async (req, res) => {
 exports.getStatistics = asyncHandler(async (req, res) => {
   const { startDate, endDate } = req.query;
   
-  // Получаем все депозиты пользователя
   const deposits = await Deposit.find({ userId: req.user.id });
   
-  // Общий баланс
   const totalBalance = deposits
     .filter(d => d.status === 'active')
     .reduce((sum, d) => sum + d.currentBalance, 0);
   
-  // Транзакции для расчета дохода
   const transactionQuery = {
     userId: req.user.id,
     type: 'interest'
@@ -481,10 +617,8 @@ exports.getStatistics = asyncHandler(async (req, res) => {
     0
   );
   
-  // Активные депозиты
   const activeDepositsCount = deposits.filter(d => d.status === 'active').length;
   
-  // Созревшие депозиты
   const today = new Date();
   const maturedDepositsCount = deposits.filter(
     d => d.status === 'active' && new Date(d.endDate) <= today
@@ -498,5 +632,54 @@ exports.getStatistics = asyncHandler(async (req, res) => {
       activeDepositsCount,
       maturedDepositsCount
     }
+  });
+});
+
+// @desc    Get available incomes (с остатками)
+// @route   GET /api/v1/deposits/available-incomes
+// @access  Private
+exports.getAvailableIncomes = asyncHandler(async (req, res) => {
+  // Получаем все доходы пользователя
+  const allIncomes = await Income.find({ userId: req.user.id }).sort({ date: -1 });
+  
+  // Группируем по типу и берем самую свежую запись для каждого типа
+  const latestIncomesByType = {};
+  
+  for (const income of allIncomes) {
+    const type = income.type || 'other';
+    if (!latestIncomesByType[type]) {
+      latestIncomesByType[type] = income;
+    }
+  }
+  
+  // Получаем доступные суммы для каждого дохода
+  const incomesWithAvailability = await Promise.all(
+    Object.values(latestIncomesByType).map(async (income) => {
+      const availableAmount = await getAvailableIncomeAmount(income._id, req.user.id);
+      const incomeAmount = parseFloat(income.amount) || 0;
+      
+      return {
+        _id: income._id,
+        id: income._id,
+        source: income.source,
+        amount: incomeAmount,
+        availableAmount,
+        usedAmount: incomeAmount - availableAmount,
+        date: income.date,
+        type: income.type,
+        description: income.description
+      };
+    })
+  );
+  
+  // Фильтруем только те, у которых есть доступная сумма
+  const availableIncomes = incomesWithAvailability.filter(
+    income => income.availableAmount > 0
+  );
+  
+  res.status(200).json({
+    success: true,
+    count: availableIncomes.length,
+    data: availableIncomes
   });
 });

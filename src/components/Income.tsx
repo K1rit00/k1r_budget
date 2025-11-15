@@ -543,6 +543,7 @@ const autoProcessRecurringIncomes = async () => {
                         id="date" 
                         name="date" 
                         type="date" 
+                        className="date-input"
                         required 
                         defaultValue={editingIncome?.date ? new Date(editingIncome.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
                       />

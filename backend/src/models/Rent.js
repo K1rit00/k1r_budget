@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 
 const utilityItemSchema = new mongoose.Schema({
+  utilityTypeId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'UtilityType',
+    required: true
+  },
   name: {
     type: String,
     required: true,
@@ -47,10 +52,10 @@ const rentPropertySchema = new mongoose.Schema({
   endDate: {
     type: Date,
     validate: {
-      validator: function(value) {
+      validator: function (value) {
         return !value || value > this.startDate;
       },
-      message: 'Дата окончания должна быть позже даты начала'
+      message: 'Дата окончания должна быть после даты начала'
     }
   },
   status: {
@@ -97,7 +102,7 @@ rentPropertySchema.virtual('payments', {
 });
 
 // Метод для расчета общей суммы с коммуналкой
-rentPropertySchema.methods.getTotalAmount = function() {
+rentPropertySchema.methods.getTotalAmount = function () {
   if (this.utilitiesType === 'included') {
     return this.rentAmount;
   }

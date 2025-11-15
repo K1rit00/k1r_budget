@@ -118,7 +118,7 @@ exports.validateRecurringIncome = (req, res, next) => {
     if (isNaN(endDate.getTime())) {
       errors.push('Некорректная дата окончания');
     }
-    
+
     // Проверка, что дата окончания после начала
     if (req.body.startDate) {
       const startDate = new Date(req.body.startDate);
@@ -303,7 +303,7 @@ exports.validateCredit = (req, res, next) => {
 exports.validateDeposit = (req, res, next) => {
   // Логирование для отладки
   console.log('Deposit validation - received body:', JSON.stringify(req.body, null, 2));
-  
+
   const { bankName, accountNumber, amount, interestRate, startDate, endDate, type } = req.body;
   const errors = [];
 
@@ -375,11 +375,11 @@ exports.validateDeposit = (req, res, next) => {
     if (startDate) {
       const start = new Date(startDate);
       const endParsed = new Date(endDate);
-      
+
       // Приводим даты к началу дня для корректного сравнения
       start.setHours(0, 0, 0, 0);
       endParsed.setHours(0, 0, 0, 0);
-      
+
       if (endParsed <= start) {
         errors.push('Дата закрытия должна быть после даты открытия');
       }
@@ -760,6 +760,11 @@ exports.validateRentProperty = (req, res, next) => {
 
     if (startDate) {
       const start = new Date(startDate);
+
+      // ДОБАВЬТЕ ЭТИ 2 СТРОКИ ДЛЯ НОРМАЛИЗАЦИИ
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
       if (end <= start) {
         errors.push('Дата окончания должна быть после даты начала');
       }
@@ -783,6 +788,9 @@ exports.validateRentProperty = (req, res, next) => {
         }
         if (!utility.amount || isNaN(parseFloat(utility.amount)) || parseFloat(utility.amount) <= 0) {
           errors.push(`Сумма услуги #${index + 1} должна быть положительным числом`);
+        }
+        if (utility.utilityTypeId && !/^[0-9a-fA-F]{24}$/.test(utility.utilityTypeId)) {
+          errors.push(`Некорректный ID услуги #${index + 1}`);
         }
       });
     }

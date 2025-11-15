@@ -3,7 +3,7 @@ const UtilityType = require('../models/UtilityType');
 exports.getUtilityTypes = async (req, res) => {
   try {
     const utilityTypes = await UtilityType.find({ userId: req.user.id })
-      .sort({ order: 1, name: 1 });
+      .sort({ name: 1 });
     
     res.status(200).json({ 
       success: true, 
@@ -48,6 +48,20 @@ exports.getUtilityType = async (req, res) => {
 
 exports.createUtilityType = async (req, res) => {
   try {
+    // Проверяем существование типа услуги с таким же именем
+    const existingType = await UtilityType.findOne({
+      userId: req.user.id,
+      name: req.body.name.trim()
+    });
+
+    if (existingType) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Тип услуги с таким названием уже существует',
+        errors: ['Тип услуги с таким названием уже существует']
+      });
+    }
+
     req.body.userId = req.user.id;
     const utilityType = await UtilityType.create(req.body);
     
@@ -91,6 +105,23 @@ exports.updateUtilityType = async (req, res) => {
         success: false, 
         message: 'Нельзя редактировать тип услуги по умолчанию' 
       });
+    }
+
+    // Проверяем уникальность имени (если имя изменилось)
+    if (req.body.name && req.body.name.trim() !== utilityType.name) {
+      const existingType = await UtilityType.findOne({
+        userId: req.user.id,
+        name: req.body.name.trim(),
+        _id: { $ne: req.params.id }
+      });
+
+      if (existingType) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Тип услуги с таким названием уже существует',
+          errors: ['Тип услуги с таким названием уже существует']
+        });
+      }
     }
     
     utilityType = await UtilityType.findByIdAndUpdate(
@@ -145,7 +176,8 @@ exports.deleteUtilityType = async (req, res) => {
     
     res.status(200).json({ 
       success: true, 
-      message: 'Тип услуги удален' 
+      message: 'Тип услуги удален',
+      data: null
     });
   } catch (error) {
     res.status(500).json({ 

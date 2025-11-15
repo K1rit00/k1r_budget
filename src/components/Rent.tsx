@@ -17,8 +17,18 @@ import { apiService } from "../services/api";
 import { toast } from "sonner";
 
 // Типы данных согласно бэкенд модели
+interface UtilityType {
+  _id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  order?: number;
+}
+
 interface UtilityItem {
   _id?: string;
+  utilityTypeId?: string;
   name: string;
   amount: number;
 }
@@ -49,11 +59,24 @@ interface RentPayment {
   paymentDate: string;
   status: "paid" | "pending" | "overdue" | "cancelled";
   paymentType: "rent" | "utilities" | "deposit" | "other";
+  utilityTypeId?: string;
   notes?: string;
   receiptFile?: string;
   receiptFileName?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+interface AvailableIncome {
+  _id: string;
+  id: string;
+  source: string;
+  amount: number;
+  availableAmount: number;
+  usedAmount: number;
+  date: string;
+  type: string;
+  description?: string;
 }
 
 interface RentStatistics {
@@ -74,6 +97,7 @@ function Rent() {
   const [properties, setProperties] = useState<RentProperty[]>([]);
   const [payments, setPayments] = useState<RentPayment[]>([]);
   const [statistics, setStatistics] = useState<RentStatistics | null>(null);
+  const [utilityTypes, setUtilityTypes] = useState<UtilityType[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,10 +106,14 @@ function Rent() {
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<RentProperty | null>(null);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>("");
+  const [selectedPaymentType, setSelectedPaymentType] = useState<string>("rent");
+  const [selectedUtilityTypeId, setSelectedUtilityTypeId] = useState<string>("");
   const [receiptFile, setReceiptFile] = useState<{ data: string; name: string } | null>(null);
   const [utilityItems, setUtilityItems] = useState<UtilityItem[]>([{ name: "", amount: 0 }]);
   const [selectedUtilitiesType, setSelectedUtilitiesType] = useState<"included" | "fixed" | "variable">("variable");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [availableIncomes, setAvailableIncomes] = useState<AvailableIncome[]>([]);
+  const [selectedIncomeId, setSelectedIncomeId] = useState<string>("cash");
 
   // Загрузка данных при монтировании
   useEffect(() => {
@@ -99,7 +127,9 @@ function Rent() {
       await Promise.all([
         loadProperties(),
         loadPayments(),
-        loadStatistics()
+        loadStatistics(),
+        loadUtilityTypes(),
+        loadAvailableIncomes() // Добавьте эту строку
       ]);
     } catch (err: any) {
       console.error("Error loading data:", err);
@@ -120,6 +150,17 @@ function Rent() {
     }
   };
 
+  const loadAvailableIncomes = async () => {
+    try {
+      const response = await apiService.getAvailableIncomes();
+      setAvailableIncomes(response.data || []);
+    } catch (error: any) {
+      console.error("Error loading available incomes:", error);
+      // Не бросаем ошибку, можно продолжить работу без доходов
+      setAvailableIncomes([]);
+    }
+  };
+
   const loadPayments = async () => {
     try {
       const response = await apiService.getRentPayments();
@@ -137,6 +178,16 @@ function Rent() {
     } catch (error: any) {
       console.error("Error loading statistics:", error);
       // Не бросаем ошибку, статистика не критична
+    }
+  };
+
+  const loadUtilityTypes = async () => {
+    try {
+      const response = await apiService.getUtilityTypes();
+      setUtilityTypes(response.data || []);
+    } catch (error: any) {
+      console.error("Error loading utility types:", error);
+      // Не бросаем ошибку, можно продолжить работу без типов
     }
   };
 
@@ -174,6 +225,8 @@ function Rent() {
 
       const formData = new FormData(e.currentTarget);
       const utilitiesType = formData.get("utilitiesType") as "included" | "fixed" | "variable";
+      const startDateStr = formData.get("startDate") as string;
+      const endDateStr = formData.get("endDate") as string;
 
       let totalUtilitiesAmount = 0;
       let filteredUtilities: UtilityItem[] | undefined = undefined;
@@ -181,6 +234,19 @@ function Rent() {
       if (utilitiesType === "fixed") {
         filteredUtilities = utilityItems.filter(item => item.name.trim() && item.amount > 0);
         totalUtilitiesAmount = filteredUtilities.reduce((sum, item) => sum + item.amount, 0);
+      }
+
+      if (endDateStr) {
+        const start = new Date(startDateStr);
+        const end = new Date(endDateStr);
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+          toast.error("Некорректный формат дат");
+          return;
+        }
+        if (end <= start) {
+          toast.error("Дата окончания должна быть после даты начала");
+          return; // Прерываем submit
+        }
       }
 
       const propertyData = {
@@ -198,7 +264,6 @@ function Rent() {
         description: (formData.get("description") as string) || undefined,
         tenants: []
       };
-
       if (editingProperty) {
         await apiService.updateRentProperty(editingProperty._id, propertyData);
         toast.success("Объект недвижимости обновлен");
@@ -239,17 +304,28 @@ function Rent() {
       setSubmitting(true);
 
       const formData = new FormData(e.currentTarget);
+      const incomeId = formData.get("incomeId") as string;
 
-      const paymentData = {
+      const paymentData: any = {
         propertyId: selectedPropertyId,
         amount: parseFloat(formData.get("amount") as string),
         paymentDate: formData.get("paymentDate") as string,
         status: "paid" as const,
-        paymentType: formData.get("paymentType") as "rent" | "utilities" | "deposit" | "other",
+        paymentType: selectedPaymentType as "rent" | "utilities" | "deposit" | "other",
         notes: (formData.get("notes") as string) || undefined,
         receiptFile: receiptFile?.data,
         receiptFileName: receiptFile?.name
       };
+
+      // Добавляем incomeId только если выбран доход (не наличные)
+      if (incomeId && incomeId !== "cash") {
+        paymentData.incomeId = incomeId;
+      }
+
+      // Если это коммунальный платеж, добавляем utilityTypeId
+      if (selectedPaymentType === "utilities" && selectedUtilityTypeId) {
+        paymentData.utilityTypeId = selectedUtilityTypeId;
+      }
 
       await apiService.createRentPayment(paymentData);
 
@@ -260,6 +336,7 @@ function Rent() {
       resetPaymentForm();
       await loadPayments();
       await loadStatistics();
+      await loadAvailableIncomes(); // Обновляем доступные доходы
 
     } catch (err: any) {
       console.error("Error saving payment:", err);
@@ -323,10 +400,14 @@ function Rent() {
   // Сброс формы платежа
   const resetPaymentForm = () => {
     setSelectedPropertyId("");
+    setSelectedPaymentType("rent");
+    setSelectedUtilityTypeId("");
+    setSelectedIncomeId("cash"); // Добавьте эту строку
     setReceiptFile(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+  };
+
+  const getItemId = (item: any): string => {
+    return item._id || item.id || '';
   };
 
   // Скачивание квитанции
@@ -356,21 +437,73 @@ function Rent() {
     }
   };
 
-  const updateUtilityItem = (index: number, field: 'name' | 'amount', value: string | number) => {
+  const updateUtilityItem = (index: number, field: 'utilityTypeId' | 'name' | 'amount', value: string | number) => {
     const updated = [...utilityItems];
-    if (field === 'name') {
+
+    if (field === 'utilityTypeId') {
+      const utilityType = utilityTypes.find(ut => ut._id === value);
+      if (utilityType) {
+        updated[index].utilityTypeId = value as string;
+        updated[index].name = utilityType.name;
+      }
+    } else if (field === 'name') {
       updated[index].name = value as string;
     } else {
       updated[index].amount = typeof value === 'number' ? value : parseFloat(value as string) || 0;
     }
+
     setUtilityItems(updated);
+  };
+
+  // Обработчик изменения типа платежа
+  const handlePaymentTypeChange = (value: string) => {
+    setSelectedPaymentType(value);
+    setSelectedUtilityTypeId("");
+
+    // Автоматически подставляем сумму для определенных типов платежей
+    if (selectedPropertyId) {
+      const property = properties.find(p => p._id === selectedPropertyId);
+      if (property) {
+        const amountInput = document.getElementById("amount") as HTMLInputElement;
+        if (amountInput) {
+          if (value === "rent") {
+            amountInput.value = property.rentAmount.toString();
+          } else if (value === "deposit") {
+            amountInput.value = property.deposit.toString();
+          }
+        }
+      }
+    }
+  };
+
+  // Обработчик изменения коммунальной услуги
+  const handleUtilityTypeChange = (utilityTypeId: string) => {
+    setSelectedUtilityTypeId(utilityTypeId);
+
+    // Автоматически подставляем сумму из списка услуг объекта
+    if (selectedPropertyId) {
+      const property = properties.find(p => p._id === selectedPropertyId);
+      if (property && property.utilities) {
+        const utility = property.utilities.find(u => u.utilityTypeId === utilityTypeId);
+        if (utility) {
+          const amountInput = document.getElementById("amount") as HTMLInputElement;
+          if (amountInput) {
+            amountInput.value = utility.amount.toString();
+          }
+        }
+      }
+    }
   };
 
   // Эффект для инициализации utility items при редактировании
   useEffect(() => {
     if (editingProperty && isPropertyDialogOpen) {
       if (editingProperty.utilities && editingProperty.utilities.length > 0) {
-        setUtilityItems(editingProperty.utilities.map(u => ({ name: u.name, amount: u.amount })));
+        setUtilityItems(editingProperty.utilities.map(u => ({
+          utilityTypeId: u.utilityTypeId,
+          name: u.name,
+          amount: u.amount
+        })));
       } else {
         setUtilityItems([{ name: "", amount: 0 }]);
       }
@@ -382,37 +515,73 @@ function Rent() {
 
   // Расчет данных для графика
   const getMonthlyExpenseData = () => {
-    if (statistics?.monthlyData) {
-      return statistics.monthlyData;
-    }
+    // ВСЕГДА пересчитываем данные с учетом фиксированных платежей
+    const monthlyData: Record<string, { month: string; rent: number; utilities: number; total: number }> = {};
 
-    // Fallback: вычисляем из платежей если нет данных от сервера
-    const monthlyData = payments
+    // 1. Добавляем реальные платежи
+    payments
       .filter(p => p.status === "paid")
-      .reduce((acc, payment) => {
+      .forEach(payment => {
         const date = new Date(payment.paymentDate);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         const monthName = date.toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
 
-        if (!acc[monthKey]) {
-          acc[monthKey] = { month: monthName, rent: 0, utilities: 0, total: 0 };
+        if (!monthlyData[monthKey]) {
+          monthlyData[monthKey] = { month: monthName, rent: 0, utilities: 0, total: 0 };
         }
 
         if (payment.paymentType === "utilities") {
-          acc[monthKey].utilities += payment.amount;
+          monthlyData[monthKey].utilities += payment.amount;
         } else {
-          acc[monthKey].rent += payment.amount;
+          monthlyData[monthKey].rent += payment.amount;
         }
-        acc[monthKey].total += payment.amount;
+        monthlyData[monthKey].total += payment.amount;
+      });
 
-        return acc;
-      }, {} as Record<string, { month: string; rent: number; utilities: number; total: number }>);
+    // 2. Добавляем фиксированные коммунальные платежи для всех объектов (всегда, независимо от реальных платежей)
+    properties.forEach(property => {
+      // Проверяем, что у объекта фиксированные коммунальные платежи
+      if (property.utilitiesType === "fixed" && property.utilitiesAmount) {
+        const startDate = new Date(property.startDate);
+        const now = new Date();
+
+        // Определяем конечную дату для расчета (либо endDate, либо текущая дата)
+        const calculationEndDate = property.endDate
+          ? new Date(Math.min(new Date(property.endDate).getTime(), now.getTime()))
+          : now;
+
+        // Проходим по всем месяцам от начала до конца аренды
+        let currentDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+        const lastDate = new Date(calculationEndDate.getFullYear(), calculationEndDate.getMonth(), 1);
+
+        while (currentDate <= lastDate) {
+          const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+          const monthName = currentDate.toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
+
+          // Всегда добавляем фиксированную сумму коммунальных платежей
+          if (!monthlyData[monthKey]) {
+            monthlyData[monthKey] = { month: monthName, rent: 0, utilities: 0, total: 0 };
+          }
+          monthlyData[monthKey].utilities += property.utilitiesAmount;
+          monthlyData[monthKey].total += property.utilitiesAmount;
+
+          // Переходим к следующему месяцу
+          currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+      }
+    });
 
     return Object.values(monthlyData).sort((a, b) => {
       const [aMonth, aYear] = a.month.split(" ");
       const [bMonth, bYear] = b.month.split(" ");
       return new Date(`${aYear}-${aMonth}-01`).getTime() - new Date(`${bYear}-${bMonth}-01`).getTime();
     });
+  };
+  // Получить название коммунальной услуги по ID
+  const getUtilityTypeName = (utilityTypeId?: string) => {
+    if (!utilityTypeId) return null;
+    const utilityType = utilityTypes.find(ut => ut._id === utilityTypeId);
+    return utilityType?.name;
   };
 
   // Показываем индикатор загрузки
@@ -577,6 +746,7 @@ function Rent() {
                           id="startDate"
                           name="startDate"
                           type="date"
+                          className="date-input"
                           required
                           defaultValue={editingProperty?.startDate?.split('T')[0]}
                         />
@@ -587,6 +757,7 @@ function Rent() {
                         <Input
                           id="endDate"
                           name="endDate"
+                          className="date-input"
                           type="date"
                           defaultValue={editingProperty?.endDate?.split('T')[0]}
                         />
@@ -630,11 +801,21 @@ function Rent() {
                           {utilityItems.map((item, index) => (
                             <div key={index} className="flex gap-2 items-start">
                               <div className="flex-1">
-                                <Input
-                                  placeholder="Наименование (например, Электричество)"
-                                  value={item.name}
-                                  onChange={(e) => updateUtilityItem(index, 'name', e.target.value)}
-                                />
+                                <Select
+                                  value={item.utilityTypeId || ""}
+                                  onValueChange={(value) => updateUtilityItem(index, 'utilityTypeId', value)}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Выберите услугу" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {utilityTypes.map((ut) => (
+                                      <SelectItem key={ut._id} value={ut._id}>
+                                        {ut.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </div>
                               <div className="w-32">
                                 <Input
@@ -743,6 +924,23 @@ function Rent() {
                             size="sm"
                             onClick={() => {
                               setEditingProperty(property);
+                              setSelectedUtilitiesType(property.utilitiesType || "variable");
+                              if (property.utilitiesType === "fixed" && property.utilities && property.utilities.length > 0) {
+                                const updatedUtilities = property.utilities.map(u => {
+                                  if (u.utilityTypeId) {
+                                    return u;
+                                  } else {
+                                    const matchingType = utilityTypes.find(ut => ut.name.toLowerCase() === u.name.toLowerCase()); // Игнорируем регистр для надежности
+                                    return {
+                                      ...u,
+                                      utilityTypeId: matchingType ? matchingType._id : undefined
+                                    };
+                                  }
+                                });
+                                setUtilityItems(updatedUtilities);
+                              } else {
+                                setUtilityItems([{ name: "", amount: 0 }]);
+                              }
                               setIsPropertyDialogOpen(true);
                             }}
                           >
@@ -844,7 +1042,11 @@ function Rent() {
               <form onSubmit={handlePaymentSubmit} className="space-y-4">
                 <div>
                   <Label htmlFor="paymentType">Тип платежа *</Label>
-                  <Select name="paymentType" defaultValue="rent">
+                  <Select
+                    name="paymentType"
+                    value={selectedPaymentType}
+                    onValueChange={handlePaymentTypeChange}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -856,6 +1058,68 @@ function Rent() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div>
+                  <Label htmlFor="incomeId">Источник оплаты</Label>
+                  <Select
+                    name="incomeId"
+                    value={selectedIncomeId}
+                    onValueChange={setSelectedIncomeId}
+                    defaultValue="cash"
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Выберите источник оплаты" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Банкомат (наличка)</SelectItem>
+                      {availableIncomes.map(income => {
+                        const typeLabels: Record<string, string> = {
+                          salary: "Зарплата",
+                          bonus: "Бонус",
+                          freelance: "Фриланс",
+                          business: "Бизнес",
+                          investment: "Инвестиции",
+                          rental: "Аренда",
+                          gift: "Подарок",
+                          other: "Другое"
+                        };
+
+                        const typeLabel = typeLabels[income.type] || income.type;
+
+                        return (
+                          <SelectItem key={getItemId(income)} value={getItemId(income)}>
+                            {income.source} ({typeLabel}) - Доступно: {income.availableAmount.toLocaleString("ru-RU")} ₸ (из {income.amount.toLocaleString("ru-RU")} ₸) - {new Date(income.date).toLocaleDateString("ru-RU")}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  {availableIncomes.length === 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Нет доступных доходов. Все средства использованы или доходы отсутствуют.
+                    </p>
+                  )}
+                </div>
+                {selectedPaymentType === "utilities" && (
+                  <div>
+                    <Label htmlFor="utilityType">Коммунальная услуга *</Label>
+                    <Select
+                      value={selectedUtilityTypeId}
+                      onValueChange={handleUtilityTypeChange}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Выберите услугу" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {utilityTypes.map((ut) => (
+                          <SelectItem key={ut._id} value={ut._id}>
+                            {ut.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 <div>
                   <Label htmlFor="amount">Сумма платежа (₸) *</Label>
                   <Input
@@ -873,6 +1137,7 @@ function Rent() {
                     id="paymentDate"
                     name="paymentDate"
                     type="date"
+                    className="date-input"
                     required
                     defaultValue={new Date().toISOString().split('T')[0]}
                   />
@@ -881,12 +1146,12 @@ function Rent() {
                   <Label htmlFor="receipt">Квитанция об оплате</Label>
                   <div className="flex items-center gap-2">
                     <Input
-                      ref={fileInputRef}
                       id="receipt"
                       type="file"
                       accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf"
                       onChange={handleFileUpload}
                       className="flex-1"
+                      key={receiptFile ? "has-file" : "no-file"}
                     />
                     {receiptFile && (
                       <Badge variant="secondary" className="flex items-center gap-1">
@@ -956,6 +1221,7 @@ function Rent() {
                     .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime())
                     .map(payment => {
                       const property = properties.find(p => p._id === payment.propertyId);
+                      const utilityTypeName = getUtilityTypeName(payment.utilityTypeId);
 
                       return (
                         <div key={payment._id} className="flex items-start justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
@@ -971,6 +1237,11 @@ function Rent() {
                                   payment.paymentType === "utilities" ? "Коммуналка" :
                                     payment.paymentType === "deposit" ? "Залог" : "Другое"}
                               </Badge>
+                              {utilityTypeName && (
+                                <Badge variant="outline">
+                                  {utilityTypeName}
+                                </Badge>
+                              )}
                               <Badge variant={
                                 payment.status === "paid" ? "default" :
                                   payment.status === "pending" ? "secondary" :

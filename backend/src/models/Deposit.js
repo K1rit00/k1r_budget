@@ -63,6 +63,17 @@ const depositSchema = new mongoose.Schema(
     description: {
       type: String,
       maxlength: [500, 'Описание не может быть длиннее 500 символов']
+    },
+    lastInterestAccrued: {
+      type: Date
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now
     }
   },
   {
@@ -70,8 +81,16 @@ const depositSchema = new mongoose.Schema(
   }
 );
 
-// Валидация дат - выполняется перед сохранением
+// Валидация дат и установка lastInterestAccrued - выполняется перед сохранением
 depositSchema.pre('save', function(next) {
+  const now = new Date();
+  
+  if (this.isNew) {
+    // Устанавливаем lastInterestAccrued: если startDate в будущем - с startDate, иначе с текущего момента
+    const start = new Date(this.startDate);
+    this.lastInterestAccrued = start > now ? start : now;
+  }
+
   if (this.endDate && this.startDate) {
     if (this.endDate <= this.startDate) {
       return next(new Error('Дата закрытия должна быть после даты открытия'));

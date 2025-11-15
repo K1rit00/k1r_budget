@@ -13,13 +13,25 @@ import { Badge } from "./ui/badge";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LineChart, Line, Tooltip, Legend, PieChart, Pie, Cell } from "recharts";
 import { useAppActions } from "../contexts/AppContext";
 import { apiService } from "../services/api";
-import type { Deposit, DepositTransaction, Income } from "../types";
+import type { Deposit, DepositTransaction } from "../types";
 
 interface DepositStatistics {
   totalBalance: number;
   totalInterestEarned: number;
   activeDepositsCount: number;
   maturedDepositsCount: number;
+}
+
+interface AvailableIncome {
+  _id: string;
+  id: string;
+  source: string;
+  amount: number;
+  availableAmount: number;
+  usedAmount: number;
+  date: string;
+  type: string;
+  description?: string;
 }
 
 interface Bank {
@@ -36,7 +48,7 @@ function Deposits() {
   const { addNotification } = useAppActions();
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [transactions, setTransactions] = useState<DepositTransaction[]>([]);
-  const [incomes, setIncomes] = useState<Income[]>([]);
+  const [availableIncomes, setAvailableIncomes] = useState<AvailableIncome[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [statistics, setStatistics] = useState<DepositStatistics>({
     totalBalance: 0,
@@ -53,7 +65,6 @@ function Deposits() {
   const [transactionType, setTransactionType] = useState<TransactionType>("deposit");
   const [selectedBankId, setSelectedBankId] = useState<string>("");
 
-  // Вспомогательная функция для получения ID
   const getItemId = (item: any): string => {
     return item._id || item.id || '';
   };
@@ -66,17 +77,15 @@ function Deposits() {
     try {
       setLoading(true);
 
-      const [depositsResponse, transactionsResponse, incomesResponse, statsResponse, banksResponse] = await Promise.all([
+      const [depositsResponse, transactionsResponse, statsResponse, banksResponse] = await Promise.all([
         apiService.getDeposits(),
         apiService.getDepositTransactions(),
-        apiService.getIncome(),
         apiService.getDepositStatistics(),
         apiService.getBanks()
       ]);
 
       setDeposits(depositsResponse.data || []);
       setTransactions(transactionsResponse.data || []);
-      setIncomes(incomesResponse.data || []);
       setBanks(banksResponse.data || []);
       setStatistics(statsResponse.data || {
         totalBalance: 0,
@@ -84,6 +93,16 @@ function Deposits() {
         activeDepositsCount: 0,
         maturedDepositsCount: 0
       });
+
+      // Загружаем доступные доходы отдельно, с обработкой ошибок
+      try {
+        const availableIncomesResponse = await apiService.getAvailableIncomes();
+        setAvailableIncomes(availableIncomesResponse.data || []);
+      } catch (incomeError) {
+        console.error('Ошибка загрузки доступных доходов:', incomeError);
+        // Если endpoint не работает, используем пустой массив
+        setAvailableIncomes([]);
+      }
 
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } }; message?: string };
@@ -183,7 +202,6 @@ function Deposits() {
         description: (formData.get("description") as string)?.trim() || undefined
       };
 
-      // При редактировании сохраняем currentBalance
       if (editingDeposit) {
         depositData.currentBalance = editingDeposit.currentBalance;
         const depositId = getItemId(editingDeposit);
@@ -218,14 +236,18 @@ function Deposits() {
   const handleTransactionSubmit = async (formData: FormData) => {
     try {
       const incomeId = formData.get("incomeId") as string;
-      const transactionData = {
+      const transactionData: any = {
         depositId: selectedDepositId,
         type: transactionType,
         amount: parseFloat(formData.get("amount") as string),
         transactionDate: formData.get("transactionDate") as string,
         description: formData.get("description") as string || undefined,
-        incomeId: transactionType === "deposit" && incomeId && incomeId !== "none" ? incomeId : undefined
       };
+
+      // Добавляем incomeId только если выбран доход
+      if (transactionType === "deposit" && incomeId && incomeId !== "cash") {
+        transactionData.incomeId = incomeId;
+      }
 
       await apiService.createDepositTransaction(transactionData);
       addNotification({ message: "Транзакция успешно добавлена", type: "success" });
@@ -299,11 +321,11 @@ function Deposits() {
   };
 
   const calculateAccruedInterest = (deposit: Deposit): number => {
-    if (!deposit.startDate || deposit.interestRate === undefined) return 0;
+    if (!deposit.createdAt || deposit.interestRate === undefined) return 0;
     const today = new Date();
-    const startDate = new Date(deposit.startDate);
-    const daysHeld = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    const yearlyInterest = (deposit.amount * deposit.interestRate) / 100;
+    const createdDate = new Date(deposit.createdAt);
+    const daysHeld = Math.floor((today.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+    const yearlyInterest = (deposit.currentBalance * deposit.interestRate) / 100;
     return (yearlyInterest * daysHeld) / 365;
   };
 
@@ -469,6 +491,7 @@ function Deposits() {
                         id="startDate"
                         name="startDate"
                         type="date"
+                        className="date-input"
                         required
                         defaultValue={formatDateForInput(editingDeposit?.startDate)}
                       />
@@ -479,6 +502,7 @@ function Deposits() {
                         id="endDate"
                         name="endDate"
                         type="date"
+                        className="date-input"
                         required
                         defaultValue={formatDateForInput(editingDeposit?.endDate)}
                       />
@@ -682,20 +706,40 @@ function Deposits() {
 
                 {transactionType === "deposit" && (
                   <div>
-                    <Label htmlFor="incomeId">Источник дохода (опционально)</Label>
-                    <Select name="incomeId" defaultValue="none">
+                    <Label htmlFor="incomeId">Источник дохода</Label>
+                    <Select name="incomeId" defaultValue="cash">
                       <SelectTrigger>
                         <SelectValue placeholder="Выберите источник дохода" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">Не указан</SelectItem>
-                        {incomes.map(income => (
-                          <SelectItem key={getItemId(income)} value={getItemId(income)}>
-                            {income.source} - {income.amount.toLocaleString("kk-KZ")} ₸
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="cash">Банкомат (наличка)</SelectItem>
+                        {availableIncomes.map(income => {
+                          const typeLabels: Record<string, string> = {
+                            salary: "Зарплата",
+                            bonus: "Бонус",
+                            freelance: "Фриланс",
+                            business: "Бизнес",
+                            investment: "Инвестиции",
+                            rental: "Аренда",
+                            gift: "Подарок",
+                            other: "Другое"
+                          };
+
+                          const typeLabel = typeLabels[income.type] || income.type;
+
+                          return (
+                            <SelectItem key={getItemId(income)} value={getItemId(income)}>
+                              {income.source} ({typeLabel}) - Доступно: {income.availableAmount.toLocaleString("kk-KZ")} ₸ (из {income.amount.toLocaleString("kk-KZ")} ₸) - {new Date(income.date).toLocaleDateString("ru-RU")}
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
+                    {availableIncomes.length === 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Нет доступных доходов. Все средства использованы или доходы отсутствуют.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -720,6 +764,7 @@ function Deposits() {
                     id="transactionDate"
                     name="transactionDate"
                     type="date"
+                    className="date-input"
                     required
                     defaultValue={new Date().toISOString().split('T')[0]}
                   />
@@ -774,7 +819,8 @@ function Deposits() {
                       const depositTypeNames: Record<string, string> = {
                         fixed: "Срочный",
                         savings: "Накопительный",
-                        investment: "Инвестиционный"
+                        investment: "Инвестиционный",
+                        spending: "Расходный"
                       };
                       const transactionTypeNames: Record<TransactionType, string> = {
                         deposit: "Пополнение",

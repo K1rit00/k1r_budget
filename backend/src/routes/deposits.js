@@ -13,7 +13,8 @@ const {
   createTransaction,
   updateTransaction,
   deleteTransaction,
-  getStatistics
+  getStatistics,
+  getAvailableIncomes  // НОВЫЙ МЕТОД
 } = require('../controllers/depositController');
 
 const { protect } = require('../middleware/auth');
@@ -31,7 +32,11 @@ router.use(protect);
 router.route('/statistics')
   .get(getStatistics);
 
-// 2. Transaction routes (специфичные)
+// 2. Available incomes route (НОВЫЙ ENDPOINT)
+router.route('/available-incomes')
+  .get(getAvailableIncomes);
+
+// 3. Transaction routes (специфичные)
 router.route('/transactions')
   .get(getTransactions)
   .post(createTransaction);
@@ -41,19 +46,19 @@ router.route('/transactions/:id')
   .put(updateTransaction)
   .delete(deleteTransaction);
 
-// 3. Deposit action routes (специфичные операции)
+// 4. Deposit action routes (специфичные операции)
 router.route('/:id/close')
   .patch(closeDeposit);
 
 router.route('/:id/renew')
   .patch(renewDeposit);
 
-// 4. Base deposit routes
+// 5. Base deposit routes
 router.route('/')
   .get(getDeposits)
   .post(validateDeposit, createDeposit);
 
-// 5. Параметризованный маршрут ДОЛЖЕН быть в конце!
+// 6. Параметризованный маршрут ДОЛЖЕН быть в конце!
 router.route('/:id')
   .get(getDeposit)
   .put(validateDeposit, updateDeposit)

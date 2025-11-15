@@ -227,6 +227,12 @@ export const apiService = {
     return response.data;
   },
 
+  // Get available incomes (с остатками для пополнения депозитов)
+  getAvailableIncomes: async () => {
+    const response = await api.get('/deposits/available-incomes');
+    return response.data;
+  },
+
   // Categories
   getCategories: async (type?: 'expense' | 'income') => {
     const response = await api.get('/categories', { params: { type } });
@@ -353,7 +359,7 @@ export const apiService = {
     status?: 'active' | 'completed' | 'cancelled';
     utilitiesIncluded?: boolean;
     utilitiesType?: 'included' | 'fixed' | 'variable';
-    utilities?: Array<{ name: string; amount: number }>;
+    utilities?: Array<{ utilityTypeId?: string; name: string; amount: number }>;
     utilitiesAmount?: number;
     description?: string;
     tenants?: string[];
@@ -362,7 +368,21 @@ export const apiService = {
     return response.data;
   },
 
-  updateRentProperty: async (id: string, data: any) => {
+  updateRentProperty: async (id: string, data: {
+    address?: string;
+    ownerName?: string;
+    rentAmount?: number;
+    deposit?: number;
+    startDate?: string;
+    endDate?: string;
+    status?: 'active' | 'completed' | 'cancelled';
+    utilitiesIncluded?: boolean;
+    utilitiesType?: 'included' | 'fixed' | 'variable';
+    utilities?: Array<{ utilityTypeId?: string; name: string; amount: number }>;
+    utilitiesAmount?: number;
+    description?: string;
+    tenants?: string[];
+  }) => {
     const response = await api.put(`/rent/${id}`, data);
     return response.data;
   },

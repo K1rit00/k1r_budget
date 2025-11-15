@@ -13,31 +13,15 @@ const utilityTypeSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Название не может быть длиннее 100 символов']
   },
-  description: {
-    type: String,
-    trim: true,
-    maxlength: [500, 'Описание не может быть длиннее 500 символов']
-  },
-  icon: {
-    type: String,
-    default: 'zap'
-  },
-  color: {
-    type: String,
-    default: '#10b981'
-  },
   isDefault: {
     type: Boolean,
     default: false
-  },
-  order: {
-    type: Number,
-    default: 0
   }
 }, {
   timestamps: true
 });
 
+// Уникальность по связке userId + name
 utilityTypeSchema.index({ userId: 1, name: 1 }, { unique: true });
 
 module.exports = mongoose.model('UtilityType', utilityTypeSchema);

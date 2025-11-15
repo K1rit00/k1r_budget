@@ -50,6 +50,7 @@ export interface Income {
   source: string;
   description?: string;
   isRecurring: boolean;
+  type: string;
   recurringPeriod?: "weekly" | "monthly" | "quarterly" | "yearly";
   tags?: string[];
   accountId?: string;
@@ -217,14 +218,16 @@ export interface Deposit {
   accountNumber?: string;
   amount: number;
   currentBalance: number;
-  interestRate?: number;  // Оставлено optional, но в коде добавьте проверки
-  startDate?: string;     // Оставлено optional, но в коде добавьте проверки
-  endDate?: string;       // Оставлено optional, но в коде добавьте проверки
-  type: "fixed" | "savings" | "investment" | "spending";  // "spending" оставлен; если не нужен, удалите
+  interestRate?: number;  
+  startDate?: string;    
+  endDate?: string;       
+  type: "fixed" | "savings" | "investment" | "spending";  
   autoRenewal?: boolean;
   isActive: boolean;
   status?: "active" | "matured" | "closed";
   description?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface DepositTransaction {

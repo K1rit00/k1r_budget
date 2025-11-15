@@ -81,14 +81,14 @@ exports.updateRentProperty = asyncHandler(async (req, res) => {
     });
   }
   
-  property = await RentProperty.findByIdAndUpdate(
-    req.params.id,
-    req.body,
-    {
-      new: true,
-      runValidators: true
-    }
-  );
+  // ИСПОЛЬЗУЕМ Object.assign И property.save() ВМЕСТО findByIdAndUpdate
+  // Это гарантирует, что валидаторы "save" (как в Rent.js) сработают корректно
+  
+  // Присваиваем новые значения из req.body
+  Object.assign(property, req.body);
+  
+  // Запускаем сохранение (и наши валидаторы)
+  await property.save();
   
   res.status(200).json({
     success: true,
