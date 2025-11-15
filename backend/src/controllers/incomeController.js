@@ -1,4 +1,5 @@
 const Income = require('../models/Income');
+const Category = require('../models/Category');
 
 exports.getIncomes = async (req, res) => {
   try {
@@ -13,6 +14,7 @@ exports.getIncomes = async (req, res) => {
     if (type) query.type = type;
 
     const incomes = await Income.find(query)
+      .populate('type', 'name icon color') // Загружаем информацию о категории
       .sort({ date: -1 })
       .limit(parseInt(limit))
       .skip((parseInt(page) - 1) * parseInt(limit));
@@ -34,7 +36,8 @@ exports.getIncomes = async (req, res) => {
 
 exports.getIncome = async (req, res) => {
   try {
-    const income = await Income.findOne({ _id: req.params.id, userId: req.user.id });
+    const income = await Income.findOne({ _id: req.params.id, userId: req.user.id })
+      .populate('type', 'name icon color');
     if (!income) return res.status(404).json({ success: false, message: 'Доход не найден' });
     res.status(200).json({ success: true, data: income });
   } catch (error) {
@@ -44,9 +47,28 @@ exports.getIncome = async (req, res) => {
 
 exports.createIncome = async (req, res) => {
   try {
+    // Проверяем существование категории
+    const category = await Category.findOne({ 
+      _id: req.body.type, 
+      userId: req.user.id,
+      type: 'income' 
+    });
+    
+    if (!category) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Категория не найдена или не является категорией дохода' 
+      });
+    }
+
     req.body.userId = req.user.id;
     const income = await Income.create(req.body);
-    res.status(201).json({ success: true, data: income });
+    
+    // Загружаем созданный доход с информацией о категории
+    const populatedIncome = await Income.findById(income._id)
+      .populate('type', 'name icon color');
+    
+    res.status(201).json({ success: true, data: populatedIncome });
   } catch (error) {
     res.status(400).json({ success: false, message: 'Ошибка создания дохода', error: error.message });
   }
@@ -57,7 +79,27 @@ exports.updateIncome = async (req, res) => {
     let income = await Income.findOne({ _id: req.params.id, userId: req.user.id });
     if (!income) return res.status(404).json({ success: false, message: 'Доход не найден' });
     
-    income = await Income.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    // Если меняется категория, проверяем её существование
+    if (req.body.type) {
+      const category = await Category.findOne({ 
+        _id: req.body.type, 
+        userId: req.user.id,
+        type: 'income' 
+      });
+      
+      if (!category) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Категория не найдена или не является категорией дохода' 
+        });
+      }
+    }
+    
+    income = await Income.findByIdAndUpdate(req.params.id, req.body, { 
+      new: true, 
+      runValidators: true 
+    }).populate('type', 'name icon color');
+    
     res.status(200).json({ success: true, data: income });
   } catch (error) {
     res.status(400).json({ success: false, message: 'Ошибка обновления дохода', error: error.message });
@@ -89,7 +131,25 @@ exports.getIncomesStats = async (req, res) => {
 
     const stats = await Income.aggregate([
       { $match: match },
-      { $group: { _id: '$type', total: { $sum: { $toDouble: '$amount' } }, count: { $sum: 1 } } },
+      { 
+        $lookup: {
+          from: 'categories',
+          localField: 'type',
+          foreignField: '_id',
+          as: 'category'
+        }
+      },
+      { $unwind: '$category' },
+      { 
+        $group: { 
+          _id: '$type',
+          categoryName: { $first: '$category.name' },
+          categoryIcon: { $first: '$category.icon' },
+          categoryColor: { $first: '$category.color' },
+          total: { $sum: { $toDouble: '$amount' } }, 
+          count: { $sum: 1 } 
+        } 
+      },
       { $sort: { total: -1 } }
     ]);
 

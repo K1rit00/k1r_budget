@@ -37,10 +37,11 @@ exports.validateIncome = (req, res, next) => {
     }
   }
 
-  // Проверка типа
-  const validTypes = ['salary', 'bonus', 'investment', 'freelance', 'other'];
-  if (type && !validTypes.includes(type)) {
-    errors.push('Недопустимый тип дохода');
+  // ИЗМЕНЕНО: Проверка типа как ObjectId категории
+  if (!type || type.trim() === '') {
+    errors.push('Категория дохода обязательна');
+  } else if (!/^[0-9a-fA-F]{24}$/.test(type)) {
+    errors.push('Некорректный ID категории');
   }
 
   // Проверка описания (если есть)
@@ -84,10 +85,11 @@ exports.validateRecurringIncome = (req, res, next) => {
     }
   }
 
-  // Проверка типа
-  const validTypes = ['salary', 'bonus', 'investment', 'freelance', 'other'];
-  if (type && !validTypes.includes(type)) {
-    errors.push('Недопустимый тип дохода');
+  // ИЗМЕНЕНО: Проверка типа как ObjectId категории
+  if (!type || type.trim() === '') {
+    errors.push('Категория дохода обязательна');
+  } else if (!/^[0-9a-fA-F]{24}$/.test(type)) {
+    errors.push('Некорректный ID категории');
   }
 
   // Проверка дня месяца (обязательно для регулярных доходов)

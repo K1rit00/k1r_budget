@@ -23,75 +23,65 @@ const recurringIncomeSchema = new mongoose.Schema({
     maxlength: 500
   },
   type: {
-    type: String,
-    enum: ['salary', 'bonus', 'investment', 'freelance', 'other'],
-    default: 'salary'
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category',
+    required: [true, 'Тип дохода обязателен']
   },
-  // Настройки повторения
   recurringDay: {
     type: Number,
-    required: [true, 'День месяца обязателен для регулярного дохода'],
-    min: 1,
-    max: 31
+    required: [true, 'День повторения обязателен'],
+    min: [1, 'День должен быть от 1 до 31'],
+    max: [31, 'День должен быть от 1 до 31']
   },
-  // Активность шаблона
   isActive: {
     type: Boolean,
     default: true
   },
-  // Отслеживание последнего создания
-  lastCreated: {
-    month: Number, // 0-11
-    year: Number
-  },
-  // История созданных доходов
-  createdIncomes: [{
-    incomeId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Income'
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now
-    },
-    amount: String, // На случай если сумма изменилась
-    month: Number,
-    year: Number
-  }],
-  // Дополнительные настройки
   autoCreate: {
     type: Boolean,
     default: true
   },
-  notifyBeforeCreation: {
-    type: Boolean,
-    default: false
+  lastCreated: {
+    month: {
+      type: Number
+    },
+    year: {
+      type: Number
+    }
   },
-  // Даты начала и окончания (опционально)
-  startDate: {
-    type: Date,
-    default: Date.now
-  },
-  endDate: {
-    type: Date
-  }
+  createdIncomes: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Income'
+    }
+  ]
 }, {
   timestamps: true
 });
 
-// Indexes
-recurringIncomeSchema.index({ userId: 1, isActive: 1 });
+// Индексы для оптимизации
 recurringIncomeSchema.index({ userId: 1, recurringDay: 1 });
-recurringIncomeSchema.index({ 'lastCreated.year': 1, 'lastCreated.month': 1 });
+recurringIncomeSchema.index({ userId: 1, type: 1 });
 
-// Проверка, зашифрованы ли данные
+// Функция проверки шифрования (как в Income.js)
 function isEncrypted(value) {
   if (!value || typeof value !== 'string') return false;
   const base64Regex = /^[A-Za-z0-9+/]+=*$/;
   return base64Regex.test(value) && value.length > 100;
 }
 
-// Encrypt amount before saving
+// Безопасная расшифровка
+function safeDecrypt(value) {
+  if (!value || !isEncrypted(value)) return value;
+  try {
+    return encryptionService.decrypt(value);
+  } catch (error) {
+    console.error('Decryption error:', error.message);
+    return null;
+  }
+}
+
+// Шифрование amount перед сохранением
 recurringIncomeSchema.pre('save', function(next) {
   if (this.isModified('amount') && !isEncrypted(this.amount)) {
     try {
@@ -103,7 +93,7 @@ recurringIncomeSchema.pre('save', function(next) {
   next();
 });
 
-// Также обрабатываем updates
+// Обработка обновлений
 recurringIncomeSchema.pre('findOneAndUpdate', function(next) {
   const update = this.getUpdate();
   const amountUpdate = update.$set?.amount || update.amount;
@@ -123,18 +113,7 @@ recurringIncomeSchema.pre('findOneAndUpdate', function(next) {
   next();
 });
 
-// Безопасная расшифровка
-function safeDecrypt(value) {
-  if (!value || !isEncrypted(value)) return value;
-  try {
-    return encryptionService.decrypt(value);
-  } catch (error) {
-    console.error('Decryption error:', error.message);
-    return null;
-  }
-}
-
-// Decrypt amount after finding
+// Расшифровка после нахождения
 recurringIncomeSchema.post('find', function(docs) {
   if (Array.isArray(docs)) {
     docs.forEach(doc => {
@@ -154,44 +133,5 @@ recurringIncomeSchema.post('findOneAndUpdate', function(doc) {
     doc.amount = safeDecrypt(doc.amount);
   }
 });
-
-// Методы для работы с шаблоном
-recurringIncomeSchema.methods.shouldCreateThisMonth = function() {
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
-  const currentDay = now.getDate();
-  
-  // Проверяем, активен ли шаблон
-  if (!this.isActive || !this.autoCreate) return false;
-  
-  // Проверяем даты начала/окончания
-  if (this.startDate && now < this.startDate) return false;
-  if (this.endDate && now > this.endDate) return false;
-  
-  // Проверяем, наступил ли нужный день
-  if (currentDay < this.recurringDay) return false;
-  
-  // Проверяем, не создавали ли уже в этом месяце
-  if (this.lastCreated && 
-      this.lastCreated.month === currentMonth && 
-      this.lastCreated.year === currentYear) {
-    return false;
-  }
-  
-  return true;
-};
-
-recurringIncomeSchema.methods.markAsCreated = function(incomeId, month, year) {
-  this.lastCreated = { month, year };
-  this.createdIncomes.push({
-    incomeId,
-    amount: this.amount,
-    month,
-    year,
-    createdAt: new Date()
-  });
-  return this.save();
-};
 
 module.exports = mongoose.model('RecurringIncome', recurringIncomeSchema);

@@ -9,7 +9,6 @@ const categoryRoutes = require('./categories');
 const depositRoutes = require('./deposits');
 const rentRoutes = require('./rent');
 const banksRoutes = require('./banks');
-const currenciesRoutes = require('./currencies');
 const utilityTypesRoutes = require('./utilityTypes');
 
 // Mount routes
@@ -21,7 +20,6 @@ router.use('/categories', categoryRoutes);
 router.use('/rent', rentRoutes);
 router.use('/deposits', depositRoutes);
 router.use('/banks', banksRoutes);
-router.use('/currencies', currenciesRoutes);
 router.use('/utilitytypes', utilityTypesRoutes);
 
 // API info
@@ -39,7 +37,6 @@ router.get('/', (req, res) => {
       rent: '/rent',
       deposits: '/deposits',
       banks: '/banks',
-      currencies: '/currencies',
       utilityTypes: '/utility-types'
     }
   });

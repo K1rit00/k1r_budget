@@ -9,7 +9,7 @@ const {
   getIncomesStats
 } = require('../controllers/incomeController');
 const { protect } = require('../middleware/auth');
-const { validateIncome } = require('../middleware/validator');
+const { validateIncome } = require('../middleware/validation');
 
 router.use(protect);
 

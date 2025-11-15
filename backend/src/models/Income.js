@@ -27,10 +27,11 @@ const incomeSchema = new mongoose.Schema({
     required: true,
     default: Date.now
   },
+  // ИЗМЕНЕНО: теперь type - это ссылка на Category
   type: {
-    type: String,
-    enum: ['salary', 'bonus', 'investment', 'freelance', 'other'],
-    default: 'salary'
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category',
+    required: true
   },
   // Ссылка на шаблон регулярного дохода (если создан автоматически)
   recurringIncomeId: {
