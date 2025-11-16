@@ -265,25 +265,25 @@ export const apiService = {
     return response.data;
   },
 
-createCredit: async (data: {
-  name: string;
-  bank: string;
-  amount: number;
-  interestRate: number;
-  isOldCredit?: boolean; // НОВОЕ ПОЛЕ
-  initialDebt?: number; // НОВОЕ ПОЛЕ
-  monthlyPayment: number;
-  monthlyPaymentDate: number;
-  startDate: string;
-  endDate: string;
-  type: 'credit' | 'loan' | 'installment';
-  description?: string;
-  accountNumber?: string;
-  contractNumber?: string;
-}) => {
-  const response = await api.post('/credits', data);
-  return response.data;
-},
+  createCredit: async (data: {
+    name: string;
+    bank: string;
+    amount: number;
+    interestRate: number;
+    isOldCredit?: boolean;
+    initialDebt?: number;
+    monthlyPayment: number;
+    monthlyPaymentDate: number;
+    startDate: string;
+    termInMonths: number; // <<< ИЗМЕНЕНИЕ
+    type: 'credit' | 'loan' | 'installment';
+    description?: string;
+    accountNumber?: string;
+    contractNumber?: string;
+  }) => {
+    const response = await api.post('/credits', data);
+    return response.data;
+  },
 
   updateCredit: async (id: string, data: {
     name?: string;
@@ -294,14 +294,14 @@ createCredit: async (data: {
     monthlyPayment?: number;
     monthlyPaymentDate?: number;
     startDate?: string;
-    endDate?: string;
+    termInMonths?: number; // <<< ИЗМЕНЕНИЕ
     type?: 'credit' | 'loan' | 'installment';
     status?: 'active' | 'paid' | 'overdue' | 'cancelled';
     description?: string;
     accountNumber?: string;
     contractNumber?: string;
-    isOldCredit?: boolean; // НОВОЕ ПОЛЕ
-    initialDebt?: number; // НОВОЕ ПОЛЕ
+    isOldCredit?: boolean;
+    initialDebt?: number;
   }) => {
     const response = await api.put(`/credits/${id}`, data);
     return response.data;

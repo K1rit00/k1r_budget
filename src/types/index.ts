@@ -103,7 +103,8 @@ export interface Credit {
   initialDebt?: number; // НОВОЕ ПОЛЕ
   monthlyPayment: number;
   startDate: string;
-  endDate: string;
+  endDate: string; // Оставляем, так как бэкенд его вернет
+  termInMonths: number; // <<< ИЗМЕНЕНИЕ: Добавлено
   type: "credit" | "loan" | "installment";
   status: "active" | "paid" | "overdue";
   description?: string;

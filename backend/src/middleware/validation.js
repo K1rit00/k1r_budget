@@ -152,12 +152,12 @@ exports.validateCredit = (req, res, next) => {
     monthlyPayment, 
     monthlyPaymentDate,
     startDate, 
-    endDate, 
+    termInMonths, // <<< ИЗМЕНЕНИЕ
     type 
   } = req.body;
   const errors = [];
 
-  // Проверка названия
+// Проверка названия
   if (!name || name.trim() === '') {
     errors.push('Название кредита обязательно');
   } else if (name.length > 200) {
@@ -228,25 +228,15 @@ exports.validateCredit = (req, res, next) => {
   }
 
   // Проверка даты окончания
-  if (!endDate) {
-    errors.push('Дата окончания обязательна');
+if (!termInMonths) {
+    errors.push('Срок в месяцах обязателен');
   } else {
-    const end = new Date(endDate);
-    if (isNaN(end.getTime())) {
-      errors.push('Некорректная дата окончания');
+    const term = parseInt(termInMonths);
+    if (isNaN(term) || term <= 0) {
+      errors.push('Срок в месяцах должен быть положительным числом');
     }
-
-    if (startDate) {
-      const start = new Date(startDate);
-      const endParsed = new Date(endDate);
-
-      // Приводим даты к началу дня для корректного сравнения
-      start.setHours(0, 0, 0, 0);
-      endParsed.setHours(0, 0, 0, 0);
-
-      if (endParsed <= start) {
-        errors.push('Дата окончания должна быть после даты начала');
-      }
+    if (term > 600) { // 50 лет
+      errors.push('Срок слишком большой (макс. 600 мес)');
     }
   }
 

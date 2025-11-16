@@ -108,18 +108,18 @@ exports.getCreditById = async (req, res) => {
  * Создать новый кредит
  */
 exports.createCredit = async (req, res) => {
-    try {
+try {
         const {
             name,
             bank,
             amount,
             interestRate,
-            isOldCredit, // НОВОЕ ПОЛЕ
-            initialDebt, // НОВОЕ ПОЛЕ
+            isOldCredit, 
+            initialDebt, 
             monthlyPayment,
             monthlyPaymentDate,
             startDate,
-            endDate,
+            termInMonths, // <<< ИЗМЕНЕНИЕ
             type,
             description,
             accountNumber,
@@ -140,7 +140,7 @@ exports.createCredit = async (req, res) => {
         }
 
         // Подготовка данных с шифрованием
-        const creditData = {
+const creditData = {
             user: req.user.id,
             name,
             bank,
@@ -152,7 +152,7 @@ exports.createCredit = async (req, res) => {
             monthlyPayment,
             monthlyPaymentDate,
             startDate,
-            endDate,
+            termInMonths, // <<< ИЗМЕНЕНИЕ
             type,
             status: 'active',
             description
@@ -219,17 +219,17 @@ exports.updateCredit = async (req, res) => {
             });
         }
 
-        const {
+const {
             name,
             bank,
             amount,
             interestRate,
-            isOldCredit, // НОВОЕ ПОЛЕ
-            initialDebt, // НОВОЕ ПОЛЕ
+            isOldCredit, 
+            initialDebt, 
             monthlyPayment,
             monthlyPaymentDate,
             startDate,
-            endDate,
+            termInMonths, // <<< ИЗМЕНЕНИЕ
             type,
             status,
             description,
@@ -253,14 +253,14 @@ exports.updateCredit = async (req, res) => {
             credit.bank = bank;
         }
 
-        // Обновление основных полей
+// Обновление основных полей
         if (name !== undefined) credit.name = name;
         if (amount !== undefined) credit.amount = amount;
         if (interestRate !== undefined) credit.interestRate = interestRate;
         if (monthlyPayment !== undefined) credit.monthlyPayment = monthlyPayment;
         if (monthlyPaymentDate !== undefined) credit.monthlyPaymentDate = monthlyPaymentDate;
         if (startDate !== undefined) credit.startDate = startDate;
-        if (endDate !== undefined) credit.endDate = endDate;
+        if (termInMonths !== undefined) credit.termInMonths = termInMonths; // <<< ИЗМЕНЕНИЕ
         if (type !== undefined) credit.type = type;
         if (status !== undefined) credit.status = status;
         if (description !== undefined) credit.description = description;

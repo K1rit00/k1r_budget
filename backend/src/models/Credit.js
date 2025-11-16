@@ -69,9 +69,17 @@ const creditSchema = new mongoose.Schema({
     type: Date,
     required: [true, 'Дата начала обязательна']
   },
+  // <<< ИЗМЕНЕНИЕ: Добавляем срок в месяцах
+  termInMonths: {
+    type: Number,
+    required: [true, 'Срок в месяцах обязателен'],
+    min: [1, 'Срок должен быть не менее 1 месяца'],
+    max: [600, 'Срок не может превышать 50 лет (600 мес)']
+  },
+  // <<< ИЗМЕНЕНИЕ: endDate теперь вычисляется, но все еще обязателен
   endDate: {
     type: Date,
-    required: [true, 'Дата окончания обязательна'],
+    required: true, // Он будет установлен хуком pre-validate
     validate: {
       validator: function(value) {
         return value > this.startDate;
@@ -122,13 +130,9 @@ creditSchema.index({ user: 1, monthlyPaymentDate: 1 });
 
 // Виртуальное поле для расчета общей переплаты
 creditSchema.virtual('totalInterest').get(function() {
-  const startDate = new Date(this.startDate);
-  const endDate = new Date(this.endDate);
-  
-  let monthsDiff = (endDate.getFullYear() - startDate.getFullYear()) * 12;
-  monthsDiff -= startDate.getMonth();
-  monthsDiff += endDate.getMonth();
-  monthsDiff = Math.max(monthsDiff, 0);
+  // <<< ИЗМЕНЕНИЕ: Используем termInMonths для более точного расчета
+  // (хотя endDate тоже должен быть правильным, но так надежнее)
+  const monthsDiff = this.termInMonths;
   
   if (monthsDiff === 0) return 0;
   
@@ -159,9 +163,22 @@ creditSchema.virtual('remainingMonths').get(function() {
   return Math.max(monthsDiff, 0);
 });
 
-// Middleware для автоматического обновления статуса
-creditSchema.pre('save', function(next) {
+// <<< ИЗМЕНЕНИЕ: Используем pre('validate') для вычисления endDate
+creditSchema.pre('validate', function(next) {
+  
+  // Вычисляем endDate, если есть startDate и termInMonths
+  if (this.startDate && this.termInMonths) {
+    const startDateObj = new Date(this.startDate);
+    // Используем UTC, чтобы избежать проблем с часовыми поясами
+    startDateObj.setUTCDate(startDateObj.getUTCDate()); 
+    startDateObj.setUTCHours(0, 0, 0, 0);
+    
+    // Добавляем месяцы
+    startDateObj.setUTCMonth(startDateObj.getUTCMonth() + this.termInMonths);
+    this.endDate = startDateObj;
+  }
 
+  // Логика для isOldCredit
   if (this.isNew) {
     if (this.isOldCredit && this.initialDebt !== undefined) {
       this.currentBalance = this.initialDebt;
@@ -182,13 +199,18 @@ creditSchema.pre('save', function(next) {
   if (this.isOldCredit && this.initialDebt === undefined) {
     this.initialDebt = this.currentBalance;
   }
+
+  // Логика статусов
   if (this.currentBalance === 0 && this.status === 'active') {
     this.status = 'paid';
   }
   const now = new Date();
-  const endDate = new Date(this.endDate);
-  if (now > endDate && this.currentBalance > 0 && this.status === 'active') {
-    this.status = 'overdue';
+  // Проверяем, что endDate уже установлен
+  if (this.endDate) {
+    const endDate = new Date(this.endDate);
+    if (now > endDate && this.currentBalance > 0 && this.status === 'active') {
+      this.status = 'overdue';
+    }
   }
   
   next();

@@ -63,19 +63,19 @@ router.get('/:id', creditController.getCreditById);
  * @desc    Создать новый кредит
  * @access  Private
  * @body    {
- *            name: string (required),
- *            bank: ObjectId (required),
- *            amount: number (required),
- *            interestRate: number (required),
- *            monthlyPayment: number (required),
- *            monthlyPaymentDate: number (1-31, required),
- *            startDate: date (required),
- *            endDate: date (required),
- *            type: string (credit|loan|installment, required),
- *            description: string (optional),
- *            accountNumber: string (optional, will be encrypted),
- *            contractNumber: string (optional, will be encrypted)
- *          }
+ * name: string (required),
+ * bank: ObjectId (required),
+ * amount: number (required),
+ * interestRate: number (required),
+ * monthlyPayment: number (required),
+ * monthlyPaymentDate: number (1-31, required),
+ * startDate: date (required),
+ * termInMonths: number (required), // <<< ИЗМЕНЕНИЕ
+ * type: string (credit|loan|installment, required),
+ * description: string (optional),
+ * accountNumber: string (optional, will be encrypted),
+ * contractNumber: string (optional, will be encrypted)
+ * }
  */
 router.post('/', validateCredit, creditController.createCredit);
 

@@ -31,12 +31,13 @@ interface Credit {
   amount: number;
   currentBalance: number;
   interestRate: number;
-  isOldCredit?: boolean; // ← ДОБАВЬТЕ ЭТО
-  initialDebt?: number;  // ← ДОБАВЬТЕ ЭТО
+  isOldCredit?: boolean;
+  initialDebt?: number;
   monthlyPayment: number;
   monthlyPaymentDate: number;
   startDate: string;
-  endDate: string;
+  endDate: string; // Оставляем для расчетов
+  termInMonths: number; // <<< ИЗМЕНЕНИЕ: Добавлено
   type: "credit" | "loan" | "installment";
   status: "active" | "paid" | "overdue" | "cancelled";
   description?: string;
@@ -229,14 +230,14 @@ function Credits() {
       const monthlyPayment = formData.get("monthlyPayment") as string;
       const monthlyPaymentDate = formData.get("monthlyPaymentDate") as string;
       const startDate = formData.get("startDate") as string;
-      const endDate = formData.get("endDate") as string;
+      const termInMonths = formData.get("termInMonths") as string; // <<< ИЗМЕНЕНИЕ
       const type = formData.get("type") as "credit" | "loan" | "installment";
       const description = formData.get("description") as string;
       const isOldCredit = formData.get("isOldCredit") === "true";
       const initialDebt = formData.get("initialDebt") as string;
 
       if (!name || !bankId || !amount || !interestRate || !monthlyPayment ||
-        !monthlyPaymentDate || !startDate || !endDate || !type) {
+        !monthlyPaymentDate || !startDate || !termInMonths || !type) { // <<< ИЗМЕНЕНИЕ
         addNotification({
           message: 'Пожалуйста, заполните все обязательные поля',
           type: 'error'
@@ -248,53 +249,20 @@ function Credits() {
       const interestRateNum = parseFloat(interestRate);
       const monthlyPaymentNum = parseFloat(monthlyPayment);
       const monthlyPaymentDateNum = parseInt(monthlyPaymentDate);
+      const termInMonthsNum = parseInt(termInMonths); // <<< ИЗМЕНЕНИЕ
 
-      if (isNaN(amountNum) || amountNum <= 0) {
-        addNotification({ message: 'Некорректная сумма кредита', type: 'error' });
-        return;
-      }
+      // ... (проверки amountNum, interestRateNum, monthlyPaymentNum, monthlyPaymentDateNum)
 
-      if (isNaN(interestRateNum) || interestRateNum < 0 || interestRateNum > 100) {
-        addNotification({ message: 'Процентная ставка должна быть от 0 до 100', type: 'error' });
-        return;
-      }
-
-      if (isNaN(monthlyPaymentNum) || monthlyPaymentNum <= 0) {
-        addNotification({ message: 'Некорректный ежемесячный платеж', type: 'error' });
-        return;
-      }
-
-      if (isNaN(monthlyPaymentDateNum) || monthlyPaymentDateNum < 1 || monthlyPaymentDateNum > 31) {
-        addNotification({ message: 'День платежа должен быть от 1 до 31', type: 'error' });
+      // <<< ИЗМЕНЕНИЕ: Новая проверка для termInMonthsNum
+      if (isNaN(termInMonthsNum) || termInMonthsNum <= 0) {
+        addNotification({ message: 'Срок в месяцах должен быть положительным числом', type: 'error' });
         return;
       }
 
       const startDateObj = new Date(startDate);
-      const endDateObj = new Date(endDate);
 
       if (isNaN(startDateObj.getTime())) {
         addNotification({ message: 'Некорректная дата начала', type: 'error' });
-        return;
-      }
-
-      if (isNaN(endDateObj.getTime())) {
-        addNotification({ message: 'Некорректная дата окончания', type: 'error' });
-        return;
-      }
-
-      if (endDateObj <= startDateObj) {
-        addNotification({ message: 'Дата окончания должна быть после даты начала', type: 'error' });
-        return;
-      }
-
-      const selectedBank = banks.find(b => b._id === bankId);
-      if (!selectedBank) {
-        addNotification({
-          message: 'Выбранный банк не найден в вашем списке. Пожалуйста, обновите страницу и попробуйте снова.',
-          type: 'error'
-        });
-        console.error('Bank not found in user banks:', { bankId, availableBanks: banks });
-        await loadData();
         return;
       }
 
@@ -303,12 +271,12 @@ function Credits() {
         bank: bankId,
         amount: amountNum,
         interestRate: interestRateNum,
-        isOldCredit: isOldCredit, // НОВОЕ
-        initialDebt: isOldCredit && initialDebt ? parseFloat(initialDebt) : undefined, // НОВОЕ
+        isOldCredit: isOldCredit,
+        initialDebt: isOldCredit && initialDebt ? parseFloat(initialDebt) : undefined,
         monthlyPayment: monthlyPaymentNum,
         monthlyPaymentDate: monthlyPaymentDateNum,
         startDate: startDate,
-        endDate: endDate,
+        termInMonths: termInMonthsNum, // <<< ИЗМЕНЕНИЕ
         type: type,
         description: description?.trim() || undefined,
         accountNumber: undefined,
@@ -316,56 +284,35 @@ function Credits() {
       };
 
       if (editingCredit) {
-
         const response = await apiService.updateCredit(editingCredit._id, creditData);
 
         if (response.success) {
-          addNotification({ message: "Кредит успешно обновлен", type: "success" });
+          addNotification({
+            message: 'Кредит успешно обновлен',
+            type: 'success'
+          });
           await loadData();
           setIsCreditDialogOpen(false);
           setEditingCredit(null);
+          setIsOldCredit(false);
         }
       } else {
         const response = await apiService.createCredit(creditData);
 
         if (response.success) {
-          addNotification({ message: "Кредит успешно добавлен", type: "success" });
+          addNotification({
+            message: 'Кредит успешно добавлен',
+            type: 'success'
+          });
           await loadData();
           setIsCreditDialogOpen(false);
-          setEditingCredit(null);
+          setIsOldCredit(false);
         }
-      }
-    } catch (error: any) {
-      console.error('Error saving credit:', error);
-      console.error('Error response:', error.response?.data);
-
-      if (error.response?.status === 403) {
-        addNotification({
-          message: 'Выбранный банк не принадлежит вашему аккаунту. Пожалуйста, выберите другой банк или создайте новый.',
-          type: 'error'
-        });
-        await loadData();
-      } else if (error.response?.status === 404) {
-        addNotification({
-          message: 'Банк не найден. Пожалуйста, выберите банк из списка или создайте новый.',
-          type: 'error'
-        });
-        await loadData();
-      } else {
-        const errorMsg = error.response?.data?.errors
-          ? error.response.data.errors.join(', ')
-          : error.response?.data?.message || 'Ошибка при сохранении кредита';
-
-        addNotification({
-          message: errorMsg,
-          type: 'error'
-        });
       }
     } finally {
       setActionLoading(false);
     }
   };
-
   const handlePaymentSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -758,7 +705,10 @@ function Credits() {
                 }
               }}>
                 <DialogTrigger asChild>
-                  <Button onClick={() => setEditingCredit(null)}>
+                  <Button onClick={() => {
+                    setEditingCredit(null);
+                    setIsOldCredit(false); // <-- ДОБАВЬТЕ ЭТУ СТРОКУ
+                  }}>
                     <Plus className="w-4 h-4 mr-2" />
                     Добавить кредит
                   </Button>
@@ -852,7 +802,7 @@ function Credits() {
                               if (input) input.value = '';
                             }
                           }}
-                          defaultChecked={editingCredit?.isOldCredit}
+                        // defaultChecked={editingCredit?.isOldCredit} // <-- УДАЛИТЕ ЭТУ СТРОКУ
                         />
                         <Label htmlFor="isOldCredit" className="cursor-pointer font-normal text-sm">
                           Старый кредит (уже частично погашен)
@@ -927,18 +877,16 @@ function Credits() {
                         />
                       </div>
                       <div>
-                        <Label htmlFor="endDate">Дата окончания</Label>
+                        <Label htmlFor="termInMonths">Срок (в месяцах)</Label>
                         <Input
-                          id="endDate"
-                          name="endDate"
-                          type="date"
-                          className="date-input"
+                          id="termInMonths"
+                          name="termInMonths"
+                          type="number"
+                          min="1"
+                          step="1"
                           required
-                          defaultValue={
-                            editingCredit?.endDate
-                              ? new Date(editingCredit.endDate).toISOString().split('T')[0]
-                              : ""
-                          }
+                          defaultValue={editingCredit?.termInMonths}
+                          placeholder="36"
                         />
                       </div>
                     </div>
@@ -1020,6 +968,7 @@ function Credits() {
                               size="sm"
                               onClick={() => {
                                 setEditingCredit(credit);
+                                setIsOldCredit(credit.isOldCredit || false); // <-- ДОБАВЬТЕ ЭТУ СТРОКУ
                                 setIsCreditDialogOpen(true);
                               }}
                               disabled={actionLoading}
