@@ -30,7 +30,12 @@ interface AvailableIncome {
   availableAmount: number;
   usedAmount: number;
   date: string;
-  type: string;
+  type: string | {
+    _id: string;
+    name: string;
+    icon?: string;
+    color?: string;
+  };
   description?: string;
 }
 
@@ -50,6 +55,7 @@ function Deposits() {
   const [transactions, setTransactions] = useState<DepositTransaction[]>([]);
   const [availableIncomes, setAvailableIncomes] = useState<AvailableIncome[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
+  const [incomeCategories, setIncomeCategories] = useState<any[]>([]);
   const [statistics, setStatistics] = useState<DepositStatistics>({
     totalBalance: 0,
     totalInterestEarned: 0,
@@ -77,16 +83,18 @@ function Deposits() {
     try {
       setLoading(true);
 
-      const [depositsResponse, transactionsResponse, statsResponse, banksResponse] = await Promise.all([
+      const [depositsResponse, transactionsResponse, statsResponse, banksResponse, categoriesResponse] = await Promise.all([
         apiService.getDeposits(),
         apiService.getDepositTransactions(),
         apiService.getDepositStatistics(),
-        apiService.getBanks()
+        apiService.getBanks(),
+        apiService.getCategories('income')
       ]);
 
       setDeposits(depositsResponse.data || []);
       setTransactions(transactionsResponse.data || []);
       setBanks(banksResponse.data || []);
+      setIncomeCategories(categoriesResponse.data || []);
       setStatistics(statsResponse.data || {
         totalBalance: 0,
         totalInterestEarned: 0,
@@ -100,7 +108,6 @@ function Deposits() {
         setAvailableIncomes(availableIncomesResponse.data || []);
       } catch (incomeError) {
         console.error('Ошибка загрузки доступных доходов:', incomeError);
-        // Если endpoint не работает, используем пустой массив
         setAvailableIncomes([]);
       }
 
@@ -191,7 +198,7 @@ function Deposits() {
       const selectedBank = banks.find(b => getItemId(b) === bankId);
 
       const depositData: any = {
-        name: (formData.get("name") as string)?.trim() || undefined, // НОВОЕ ПОЛЕ
+        name: (formData.get("name") as string)?.trim() || undefined,
         bankName: selectedBank?.name || (formData.get("bankName") as string)?.trim(),
         accountNumber: (formData.get("accountNumber") as string)?.trim(),
         amount: parseFloat(formData.get("amount") as string),
@@ -233,7 +240,6 @@ function Deposits() {
       });
     }
   };
-
 
   const handleTransactionSubmit = async (formData: FormData) => {
     try {
@@ -725,22 +731,23 @@ function Deposits() {
                       <SelectContent>
                         <SelectItem value="cash">Банкомат (наличка)</SelectItem>
                         {availableIncomes.map(income => {
-                          const typeLabels: Record<string, string> = {
-                            salary: "Зарплата",
-                            bonus: "Бонус",
-                            freelance: "Фриланс",
-                            business: "Бизнес",
-                            investment: "Инвестиции",
-                            rental: "Аренда",
-                            gift: "Подарок",
-                            other: "Другое"
-                          };
-
-                          const typeLabel = typeLabels[income.type] || income.type;
+                          // Получаем название категории из загруженных данных
+                          let categoryName = "Другое";
+                          
+                          if (typeof income.type === 'object' && income.type !== null) {
+                            // Если type уже populate (объект с полями)
+                            categoryName = income.type.name;
+                          } else if (typeof income.type === 'string') {
+                            // Если type это ID, ищем категорию в списке
+                            const category = incomeCategories.find(c => 
+                              (c._id === income.type) || (c.id === income.type)
+                            );
+                            categoryName = category?.name || "Другое";
+                          }
 
                           return (
                             <SelectItem key={getItemId(income)} value={getItemId(income)}>
-                              {income.source} ({typeLabel}) - Доступно: {income.availableAmount.toLocaleString("kk-KZ")} ₸ (из {income.amount.toLocaleString("kk-KZ")} ₸) - {new Date(income.date).toLocaleDateString("ru-RU")}
+                              {income.source} ({categoryName}) - Доступно: {income.availableAmount.toLocaleString("kk-KZ")} ₸ (из {income.amount.toLocaleString("kk-KZ")} ₸) - {new Date(income.date).toLocaleDateString("ru-RU")}
                             </SelectItem>
                           );
                         })}

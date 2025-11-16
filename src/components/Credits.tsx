@@ -23,6 +23,15 @@ interface Bank {
   description?: string;
 }
 
+interface IncomeCategory {
+  _id: string;
+  id?: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  type: 'income';
+}
+
 interface Credit {
   _id: string;
   id?: string;
@@ -61,12 +70,18 @@ interface CreditPayment {
 interface AvailableIncome {
   _id: string;
   id: string;
+  name: string;
   source: string;
   amount: number;
   availableAmount: number;
   usedAmount: number;
   date: string;
-  type: string;
+  type: string | {
+    _id: string;
+    name: string;
+    icon?: string;
+    color?: string;
+  };
   description?: string;
 }
 
@@ -87,6 +102,8 @@ function Credits() {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [incomeCategories, setIncomeCategories] = useState<IncomeCategory[]>([]);
+
 
   const [isCreditDialogOpen, setIsCreditDialogOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
@@ -110,10 +127,11 @@ function Credits() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [creditsRes, banksRes, paymentsRes] = await Promise.all([
+      const [creditsRes, banksRes, paymentsRes, categoriesRes] = await Promise.all([
         apiService.getCredits(),
         apiService.getBanks(),
         apiService.getAllPayments(),
+        apiService.getCategories('income'), // Добавлено
         loadAvailableIncomes(),
         loadAvailableDeposits()
       ]);
@@ -127,6 +145,9 @@ function Credits() {
       if (paymentsRes.success) {
         setPayments(paymentsRes.data);
       }
+      if (categoriesRes.success) {
+        setIncomeCategories(categoriesRes.data || []);
+      }
     } catch (error: any) {
       console.error('Error loading data:', error);
       addNotification({
@@ -136,6 +157,18 @@ function Credits() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const getCategoryName = (income: AvailableIncome): string => {
+    if (typeof income.type === 'object' && income.type !== null) {
+      return income.type.name;
+    } else if (typeof income.type === 'string') {
+      const category = incomeCategories.find(c =>
+        (c._id === income.type) || (c.id === income.type)
+      );
+      return category?.name || "Другое";
+    }
+    return "Другое";
   };
 
   const loadAvailableIncomes = async () => {
@@ -1227,22 +1260,12 @@ function Credits() {
                         Доходы
                       </div>
                       {availableIncomes.map(income => {
-                        const typeLabels: Record<string, string> = {
-                          salary: "Зарплата",
-                          bonus: "Бонус",
-                          freelance: "Фриланс",
-                          business: "Бизнес",
-                          investment: "Инвестиции",
-                          rental: "Аренда",
-                          gift: "Подарок",
-                          other: "Другое"
-                        };
-
-                        const typeLabel = typeLabels[income.type] || income.type;
+                        const categoryName = getCategoryName(income);
+                        const incomeId = income._id || income.id;
 
                         return (
-                          <SelectItem key={getItemId(income)} value={getItemId(income)}>
-                            {income.source} ({typeLabel}) - Доступно: {income.availableAmount.toLocaleString("ru-RU")} ₸
+                          <SelectItem key={incomeId} value={incomeId}>
+                            {income.source} ({categoryName}) - Доступно: {income.availableAmount.toLocaleString("kk-KZ")} ₸ (из {income.amount.toLocaleString("kk-KZ")} ₸) - {new Date(income.date).toLocaleDateString("ru-RU")}
                           </SelectItem>
                         );
                       })}
@@ -1375,22 +1398,12 @@ function Credits() {
                         Доходы
                       </div>
                       {availableIncomes.map(income => {
-                        const typeLabels: Record<string, string> = {
-                          salary: "Зарплата",
-                          bonus: "Бонус",
-                          freelance: "Фриланс",
-                          business: "Бизнес",
-                          investment: "Инвестиции",
-                          rental: "Аренда",
-                          gift: "Подарок",
-                          other: "Другое"
-                        };
-
-                        const typeLabel = typeLabels[income.type] || income.type;
+                        const categoryName = getCategoryName(income);
+                        const incomeId = income._id || income.id;
 
                         return (
-                          <SelectItem key={getItemId(income)} value={getItemId(income)}>
-                            {income.source} ({typeLabel}) - Доступно: {income.availableAmount.toLocaleString("ru-RU")} ₸
+                          <SelectItem key={incomeId} value={incomeId}>
+                            {income.source} ({categoryName}) - Доступно: {income.availableAmount.toLocaleString("kk-KZ")} ₸ (из {income.amount.toLocaleString("kk-KZ")} ₸) - {new Date(income.date).toLocaleDateString("ru-RU")}
                           </SelectItem>
                         );
                       })}

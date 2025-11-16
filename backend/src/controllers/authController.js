@@ -7,6 +7,7 @@ const { verifyRefreshToken } = require('../middleware/auth');
 exports.register = async (req, res) => {
   try {
     const { firstName, lastName, login, password } = req.body;
+    console.log('Registration attempt:', { firstName, lastName, login });
 
     // Check if user exists
     const existingUser = await User.findOne({ login });
@@ -17,6 +18,7 @@ exports.register = async (req, res) => {
       });
     }
 
+    console.log('Creating user...');
     // Create user
     const user = await User.create({
       firstName,
@@ -24,15 +26,19 @@ exports.register = async (req, res) => {
       login,
       password
     });
+    console.log('User created:', user._id);
 
+    console.log('Generating tokens...');
     // Generate tokens
     const accessToken = user.generateAuthToken();
     const refreshToken = user.generateRefreshToken();
 
+    console.log('Saving refresh token...');
     // Save refresh token
     user.refreshToken = refreshToken;
     await user.save();
 
+    console.log('Registration successful');
     res.status(201).json({
       success: true,
       data: {
@@ -50,10 +56,12 @@ exports.register = async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('Registration error details:', error);
     res.status(500).json({
       success: false,
       message: 'Ошибка при регистрации',
-      error: error.message
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
