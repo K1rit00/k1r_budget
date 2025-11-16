@@ -1,8 +1,7 @@
-import React from "react";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
-import { CreditCard, Plus, Edit, Trash2, Calendar, AlertCircle, TrendingDown, DollarSign } from "lucide-react";
+import { CreditCard, Plus, Edit, Trash2, AlertCircle, TrendingDown, DollarSign, CheckCircle, Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Input } from "./ui/input";
@@ -12,22 +11,163 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
 import { Separator } from "./ui/separator";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LineChart, Line, Tooltip, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from "recharts";
 import { useAppActions } from "../contexts/AppContext";
-import { useLocalStorage } from "../hooks/useLocalStorage";
-import type { Credit, CreditPayment } from "../types";
+import { apiService } from "../services/api";
+import { Checkbox } from "./ui/checkbox";
+
+interface Bank {
+  _id: string;
+  id?: string;
+  name: string;
+  description?: string;
+}
+
+interface Credit {
+  _id: string;
+  id?: string;
+  name: string;
+  bank: Bank | string;
+  amount: number;
+  currentBalance: number;
+  interestRate: number;
+  isOldCredit?: boolean; // ← ДОБАВЬТЕ ЭТО
+  initialDebt?: number;  // ← ДОБАВЬТЕ ЭТО
+  monthlyPayment: number;
+  monthlyPaymentDate: number;
+  startDate: string;
+  endDate: string;
+  type: "credit" | "loan" | "installment";
+  status: "active" | "paid" | "overdue" | "cancelled";
+  description?: string;
+  accountNumber?: string;
+  contractNumber?: string;
+}
+
+interface CreditPayment {
+  _id: string;
+  id?: string;
+  credit: Credit | string;
+  amount: number;
+  paymentDate: string;
+  principalAmount: number;
+  interestAmount: number;
+  status: "paid" | "pending" | "cancelled";
+  notes?: string;
+  receiptNumber?: string;
+}
+
+interface AvailableIncome {
+  _id: string;
+  id: string;
+  source: string;
+  amount: number;
+  availableAmount: number;
+  usedAmount: number;
+  date: string;
+  type: string;
+  description?: string;
+}
+
+interface AvailableDeposit {
+  _id: string;
+  id: string;
+  name: string;
+  bankName: string;
+  accountNumber: string;
+  currentBalance: number;
+  type: string;
+}
 
 function Credits() {
   const { addNotification } = useAppActions();
-  const [credits, setCredits] = useLocalStorage<Credit[]>("credits", []);
-  const [payments, setPayments] = useLocalStorage<CreditPayment[]>("credit-payments", []);
-  
+  const [credits, setCredits] = useState<Credit[]>([]);
+  const [payments, setPayments] = useState<CreditPayment[]>([]);
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+
   const [isCreditDialogOpen, setIsCreditDialogOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  const [isBulkPaymentDialogOpen, setIsBulkPaymentDialogOpen] = useState(false);
   const [editingCredit, setEditingCredit] = useState<Credit | null>(null);
   const [selectedCreditId, setSelectedCreditId] = useState<string>("");
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [isMonthlyPayment, setIsMonthlyPayment] = useState(false);
 
-  // Расчеты для статистики
+  // Новые состояния для источников оплаты
+  const [availableIncomes, setAvailableIncomes] = useState<AvailableIncome[]>([]);
+  const [availableDeposits, setAvailableDeposits] = useState<AvailableDeposit[]>([]);
+  const [selectedSourceType, setSelectedSourceType] = useState<"cash" | "income" | "deposit">("cash");
+  const [selectedIncomeId, setSelectedIncomeId] = useState<string>("cash");
+  const [isOldCredit, setIsOldCredit] = useState(false);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [creditsRes, banksRes, paymentsRes] = await Promise.all([
+        apiService.getCredits(),
+        apiService.getBanks(),
+        apiService.getAllPayments(),
+        loadAvailableIncomes(),
+        loadAvailableDeposits()
+      ]);
+
+      if (creditsRes.success) {
+        setCredits(creditsRes.data);
+      }
+      if (banksRes.success) {
+        setBanks(banksRes.data);
+      }
+      if (paymentsRes.success) {
+        setPayments(paymentsRes.data);
+      }
+    } catch (error: any) {
+      console.error('Error loading data:', error);
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка при загрузке данных',
+        type: 'error'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadAvailableIncomes = async () => {
+    try {
+      const response = await apiService.getAvailableIncomes();
+      setAvailableIncomes(response.data || []);
+    } catch (error: any) {
+      console.error("Error loading available incomes:", error);
+      setAvailableIncomes([]);
+    }
+  };
+
+  const loadAvailableDeposits = async () => {
+    try {
+      const response = await apiService.getDeposits({ status: 'active' });
+      const activeDeposits = (response.data || [])
+        .filter((d: any) => d.currentBalance > 0)
+        .map((d: any) => ({
+          _id: d._id,
+          id: d._id,
+          name: d.name || d.bankName,
+          bankName: d.bankName,
+          accountNumber: d.accountNumber,
+          currentBalance: d.currentBalance,
+          type: d.type
+        }));
+      setAvailableDeposits(activeDeposits);
+    } catch (error: any) {
+      console.error("Error loading available deposits:", error);
+      setAvailableDeposits([]);
+    }
+  };
+
   const getTotalDebt = () => {
     return credits
       .filter(credit => credit.status === "active")
@@ -44,102 +184,387 @@ function Credits() {
     return credits.filter(credit => credit.status === "active").length;
   };
 
-  // Данные для аналитики
   const getPaymentScheduleData = () => {
     const scheduleData: { [key: string]: { month: string; payments: number } } = {};
-    
+
     credits.forEach(credit => {
       if (credit.status !== "active") return;
-      
+
       const startDate = new Date(credit.startDate);
       const endDate = new Date(credit.endDate);
-      
+
       let currentDate = new Date(startDate);
       while (currentDate <= endDate) {
-        const monthKey = `${currentDate.getFullYear()}-${currentDate.getMonth() + 1}`;
+        const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
         const monthName = currentDate.toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
-        
+
         if (!scheduleData[monthKey]) {
           scheduleData[monthKey] = { month: monthName, payments: 0 };
         }
         scheduleData[monthKey].payments += credit.monthlyPayment;
-        
+
         currentDate.setMonth(currentDate.getMonth() + 1);
       }
     });
 
-    return Object.values(scheduleData).sort((a, b) => {
-      const [yearA, monthA] = a.month.split(" ");
-      const [yearB, monthB] = b.month.split(" ");
-      return new Date(parseInt(yearA), monthA === "янв" ? 0 : monthA === "фев" ? 1 : 2).getTime() - 
-             new Date(parseInt(yearB), monthB === "янв" ? 0 : monthB === "фев" ? 1 : 2).getTime();
-    });
+    const today = new Date();
+    today.setDate(1); // Устанавливаем 1-е число, чтобы получить ключ именно этого месяца
+    const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+
+    return Object.entries(scheduleData)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .filter(([key]) => key >= currentMonthKey) // <-- ДОБАВЛЕН ФИЛЬТР
+      .map(([_, value]) => value)
+      .slice(0, 12); // Показываем 12 ближайших месяцев, начиная с текущего
   };
 
-  // Обработчики форм
-  const handleCreditSubmit = (formData: FormData) => {
-    const creditData = {
-      id: editingCredit?.id || Date.now().toString(),
-      name: formData.get("name") as string,
-      bank: formData.get("bank") as string,
-      amount: parseFloat(formData.get("amount") as string),
-      currentBalance: editingCredit?.currentBalance || parseFloat(formData.get("amount") as string),
-      interestRate: parseFloat(formData.get("interestRate") as string),
-      monthlyPayment: parseFloat(formData.get("monthlyPayment") as string),
-      startDate: formData.get("startDate") as string,
-      endDate: formData.get("endDate") as string,
-      type: formData.get("type") as "credit" | "loan" | "installment",
-      status: "active" as const,
-      description: formData.get("description") as string || undefined
-    };
+  const handleCreditSubmit = async (formData: FormData) => {
+    try {
+      setActionLoading(true);
 
-    if (editingCredit) {
-      setCredits(prev => prev.map(credit => credit.id === editingCredit.id ? creditData : credit));
-      addNotification({ message: "Кредит успешно обновлен", type: "success" });
-    } else {
-      setCredits(prev => [...prev, creditData]);
-      addNotification({ message: "Кредит успешно добавлен", type: "success" });
+      const bankId = formData.get("bank") as string;
+      const name = formData.get("name") as string;
+      const amount = formData.get("amount") as string;
+      const interestRate = formData.get("interestRate") as string;
+      const monthlyPayment = formData.get("monthlyPayment") as string;
+      const monthlyPaymentDate = formData.get("monthlyPaymentDate") as string;
+      const startDate = formData.get("startDate") as string;
+      const endDate = formData.get("endDate") as string;
+      const type = formData.get("type") as "credit" | "loan" | "installment";
+      const description = formData.get("description") as string;
+      const isOldCredit = formData.get("isOldCredit") === "true";
+      const initialDebt = formData.get("initialDebt") as string;
+
+      if (!name || !bankId || !amount || !interestRate || !monthlyPayment ||
+        !monthlyPaymentDate || !startDate || !endDate || !type) {
+        addNotification({
+          message: 'Пожалуйста, заполните все обязательные поля',
+          type: 'error'
+        });
+        return;
+      }
+
+      const amountNum = parseFloat(amount);
+      const interestRateNum = parseFloat(interestRate);
+      const monthlyPaymentNum = parseFloat(monthlyPayment);
+      const monthlyPaymentDateNum = parseInt(monthlyPaymentDate);
+
+      if (isNaN(amountNum) || amountNum <= 0) {
+        addNotification({ message: 'Некорректная сумма кредита', type: 'error' });
+        return;
+      }
+
+      if (isNaN(interestRateNum) || interestRateNum < 0 || interestRateNum > 100) {
+        addNotification({ message: 'Процентная ставка должна быть от 0 до 100', type: 'error' });
+        return;
+      }
+
+      if (isNaN(monthlyPaymentNum) || monthlyPaymentNum <= 0) {
+        addNotification({ message: 'Некорректный ежемесячный платеж', type: 'error' });
+        return;
+      }
+
+      if (isNaN(monthlyPaymentDateNum) || monthlyPaymentDateNum < 1 || monthlyPaymentDateNum > 31) {
+        addNotification({ message: 'День платежа должен быть от 1 до 31', type: 'error' });
+        return;
+      }
+
+      const startDateObj = new Date(startDate);
+      const endDateObj = new Date(endDate);
+
+      if (isNaN(startDateObj.getTime())) {
+        addNotification({ message: 'Некорректная дата начала', type: 'error' });
+        return;
+      }
+
+      if (isNaN(endDateObj.getTime())) {
+        addNotification({ message: 'Некорректная дата окончания', type: 'error' });
+        return;
+      }
+
+      if (endDateObj <= startDateObj) {
+        addNotification({ message: 'Дата окончания должна быть после даты начала', type: 'error' });
+        return;
+      }
+
+      const selectedBank = banks.find(b => b._id === bankId);
+      if (!selectedBank) {
+        addNotification({
+          message: 'Выбранный банк не найден в вашем списке. Пожалуйста, обновите страницу и попробуйте снова.',
+          type: 'error'
+        });
+        console.error('Bank not found in user banks:', { bankId, availableBanks: banks });
+        await loadData();
+        return;
+      }
+
+      const creditData = {
+        name: name.trim(),
+        bank: bankId,
+        amount: amountNum,
+        interestRate: interestRateNum,
+        isOldCredit: isOldCredit, // НОВОЕ
+        initialDebt: isOldCredit && initialDebt ? parseFloat(initialDebt) : undefined, // НОВОЕ
+        monthlyPayment: monthlyPaymentNum,
+        monthlyPaymentDate: monthlyPaymentDateNum,
+        startDate: startDate,
+        endDate: endDate,
+        type: type,
+        description: description?.trim() || undefined,
+        accountNumber: undefined,
+        contractNumber: undefined
+      };
+
+      if (editingCredit) {
+
+        const response = await apiService.updateCredit(editingCredit._id, creditData);
+
+        if (response.success) {
+          addNotification({ message: "Кредит успешно обновлен", type: "success" });
+          await loadData();
+          setIsCreditDialogOpen(false);
+          setEditingCredit(null);
+        }
+      } else {
+        const response = await apiService.createCredit(creditData);
+
+        if (response.success) {
+          addNotification({ message: "Кредит успешно добавлен", type: "success" });
+          await loadData();
+          setIsCreditDialogOpen(false);
+          setEditingCredit(null);
+        }
+      }
+    } catch (error: any) {
+      console.error('Error saving credit:', error);
+      console.error('Error response:', error.response?.data);
+
+      if (error.response?.status === 403) {
+        addNotification({
+          message: 'Выбранный банк не принадлежит вашему аккаунту. Пожалуйста, выберите другой банк или создайте новый.',
+          type: 'error'
+        });
+        await loadData();
+      } else if (error.response?.status === 404) {
+        addNotification({
+          message: 'Банк не найден. Пожалуйста, выберите банк из списка или создайте новый.',
+          type: 'error'
+        });
+        await loadData();
+      } else {
+        const errorMsg = error.response?.data?.errors
+          ? error.response.data.errors.join(', ')
+          : error.response?.data?.message || 'Ошибка при сохранении кредита';
+
+        addNotification({
+          message: errorMsg,
+          type: 'error'
+        });
+      }
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handlePaymentSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    try {
+      setActionLoading(true);
+      const formData = new FormData(e.currentTarget);
+      const sourceId = formData.get("sourceId") as string;
+      const notes = formData.get("notes") as string;
+
+      // Извлекаем реальный ID депозита, убирая префикс "deposit-"
+      let actualSourceId = sourceId;
+      if (selectedSourceType === "deposit" && sourceId.startsWith("deposit-")) {
+        actualSourceId = sourceId.replace("deposit-", "");
+      }
+
+      const paymentData: any = {
+        amount: paymentAmount,
+        principalAmount: paymentAmount,
+        interestAmount: 0,
+        notes: notes || undefined
+      };
+
+      // Добавляем incomeId или depositId в зависимости от типа источника
+      if (selectedSourceType === "income" && actualSourceId && actualSourceId !== "cash") {
+        paymentData.incomeId = actualSourceId;
+      } else if (selectedSourceType === "deposit" && actualSourceId) {
+        paymentData.depositId = actualSourceId;
+
+        // Создаем транзакцию снятия с депозита
+        const transactionDescription = `Оплата кредита: ${paymentAmount.toLocaleString("ru-RU")} ₸`;
+
+        try {
+          await apiService.createDepositTransaction({
+            depositId: actualSourceId,
+            type: "withdrawal",
+            amount: paymentAmount,
+            transactionDate: new Date().toISOString().split('T')[0],
+            description: transactionDescription
+          });
+        } catch (depositError: any) {
+          console.error("Error creating deposit transaction:", depositError);
+          throw new Error(depositError.response?.data?.message || "Ошибка при снятии средств с депозита");
+        }
+      }
+
+      const response = await apiService.addPayment(selectedCreditId, paymentData);
+
+      if (response.success) {
+        addNotification({ message: "Платеж успешно добавлен", type: "success" });
+        await loadData();
+        setIsPaymentDialogOpen(false);
+        setSelectedCreditId("");
+        setPaymentAmount(0);
+        setSelectedIncomeId("cash");
+        setSelectedSourceType("cash");
+        setIsMonthlyPayment(false);
+      }
+    } catch (error: any) {
+      console.error('Error adding payment:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Ошибка при добавлении платежа';
+      addNotification({
+        message: errorMessage,
+        type: 'error'
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const payMonthlyPayments = async () => {
+    const activeCredits = credits.filter(credit => credit.status === "active");
+
+    if (activeCredits.length === 0) {
+      addNotification({ message: "Нет активных кредитов для погашения", type: "info" });
+      return;
     }
 
-    setIsCreditDialogOpen(false);
-    setEditingCredit(null);
+    // Открываем диалог выбора источника для массового платежа
+    setPaymentAmount(getMonthlyPayments());
+    setSelectedIncomeId("cash");
+    setSelectedSourceType("cash");
+    setIsBulkPaymentDialogOpen(true);
   };
 
-  const handlePaymentSubmit = (formData: FormData) => {
-    const paymentData = {
-      id: Date.now().toString(),
-      creditId: selectedCreditId,
-      amount: parseFloat(formData.get("amount") as string),
-      paymentDate: formData.get("paymentDate") as string,
-      principalAmount: parseFloat(formData.get("principalAmount") as string),
-      interestAmount: parseFloat(formData.get("interestAmount") as string),
-      status: "paid" as const
-    };
+  const handleBulkPaymentSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
 
-    setPayments(prev => [...prev, paymentData]);
-    
-    // Обновляем баланс кредита
-    setCredits(prev => prev.map(credit => {
-      if (credit.id === selectedCreditId) {
-        const newBalance = Math.max(0, credit.currentBalance - paymentData.principalAmount);
-        return {
-          ...credit,
-          currentBalance: newBalance,
-          status: newBalance === 0 ? "paid" as const : credit.status
-        };
+    const activeCredits = credits.filter(credit => credit.status === "active");
+
+    if (activeCredits.length === 0) {
+      addNotification({ message: "Нет активных кредитов для погашения", type: "info" });
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const formData = new FormData(e.currentTarget);
+      const sourceId = formData.get("sourceId") as string;
+
+      // Извлекаем реальный ID депозита
+      let actualSourceId = sourceId;
+      if (selectedSourceType === "deposit" && sourceId.startsWith("deposit-")) {
+        actualSourceId = sourceId.replace("deposit-", "");
       }
-      return credit;
-    }));
 
-    addNotification({ message: "Платеж успешно добавлен", type: "success" });
-    setIsPaymentDialogOpen(false);
-    setSelectedCreditId("");
+      // Если выбран депозит, сначала создаем транзакцию снятия
+      if (selectedSourceType === "deposit" && actualSourceId) {
+        const totalAmount = getMonthlyPayments();
+        const transactionDescription = `Погашение ежемесячных платежей по ${activeCredits.length} кредитам`;
+
+        try {
+          await apiService.createDepositTransaction({
+            depositId: actualSourceId,
+            type: "withdrawal",
+            amount: totalAmount,
+            transactionDate: new Date().toISOString().split('T')[0],
+            description: transactionDescription
+          });
+        } catch (depositError: any) {
+          console.error("Error creating deposit transaction:", depositError);
+          throw new Error(depositError.response?.data?.message || "Ошибка при снятии средств с депозита");
+        }
+      }
+
+      // Теперь добавляем платежи по каждому кредиту
+      const payments = [];
+      for (const credit of activeCredits) {
+        const paymentData: any = {
+          amount: credit.monthlyPayment,
+          principalAmount: credit.monthlyPayment,
+          interestAmount: 0,
+          notes: "Автоматический ежемесячный платеж"
+        };
+
+        // Добавляем источник только если не наличка
+        if (selectedSourceType === "income" && actualSourceId && actualSourceId !== "cash") {
+          paymentData.incomeId = actualSourceId;
+        } else if (selectedSourceType === "deposit" && actualSourceId) {
+          paymentData.depositId = actualSourceId;
+        }
+
+        const response = await apiService.addPayment(credit._id, paymentData);
+        if (response.success) {
+          payments.push(response.data);
+        }
+      }
+
+      const totalAmount = payments.reduce((sum, p) => sum + (p.payment?.amount || 0), 0);
+
+      addNotification({
+        message: `Погашено ${payments.length} платежей на общую сумму ${totalAmount.toFixed(2)} ₸`,
+        type: "success"
+      });
+
+      await loadData();
+      setIsBulkPaymentDialogOpen(false);
+      setSelectedIncomeId("cash");
+      setSelectedSourceType("cash");
+    } catch (error: any) {
+      console.error('Error paying monthly payments:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Ошибка при погашении платежей';
+      addNotification({
+        message: errorMessage,
+        type: 'error'
+      });
+    } finally {
+      setActionLoading(false);
+    }
   };
 
-  const deleteCredit = (id: string) => {
-    setCredits(prev => prev.filter(credit => credit.id !== id));
-    setPayments(prev => prev.filter(payment => payment.creditId !== id));
-    addNotification({ message: "Кредит удален", type: "info" });
+  const deleteCredit = async (id: string) => {
+    if (!confirm("Вы уверены, что хотите удалить этот кредит?")) return;
+
+    try {
+      setActionLoading(true);
+      const response = await apiService.deleteCredit(id);
+
+      if (response.success) {
+        addNotification({ message: "Кредит удален", type: "info" });
+        await loadData();
+      }
+    } catch (error: any) {
+      console.error('Error deleting credit:', error);
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка при удалении кредита',
+        type: 'error'
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const openPaymentDialog = (credit: Credit, isMonthly: boolean = false) => {
+    setSelectedCreditId(credit._id);
+    setPaymentAmount(isMonthly ? credit.monthlyPayment : credit.currentBalance);
+    setIsMonthlyPayment(isMonthly);
+    setSelectedIncomeId("cash");
+    setSelectedSourceType("cash");
+    setIsPaymentDialogOpen(true);
   };
 
   const getPaymentProgress = (credit: Credit) => {
@@ -147,13 +572,99 @@ function Credits() {
     return (paidAmount / credit.amount) * 100;
   };
 
+  const calculateTotalInterest = (credit: Credit) => {
+    const startDate = new Date(credit.startDate);
+    const endDate = new Date(credit.endDate);
+
+    let monthsDiff = (endDate.getFullYear() - startDate.getFullYear()) * 12;
+    monthsDiff -= startDate.getMonth();
+    monthsDiff += endDate.getMonth();
+    monthsDiff = Math.max(monthsDiff, 0);
+
+    if (monthsDiff === 0) return 0;
+
+    const totalPayments = credit.monthlyPayment * monthsDiff;
+    const totalInterest = totalPayments - credit.amount;
+
+    return totalInterest > 0 ? totalInterest : 0;
+  };
+
+  const getCreditTerm = (credit: Credit) => {
+    const startDate = new Date(credit.startDate);
+    const endDate = new Date(credit.endDate);
+
+    let monthsDiff = (endDate.getFullYear() - startDate.getFullYear()) * 12;
+    monthsDiff -= startDate.getMonth();
+    monthsDiff += endDate.getMonth();
+    monthsDiff = Math.max(monthsDiff, 0);
+
+    const years = Math.floor(monthsDiff / 12);
+    const months = monthsDiff % 12;
+
+    if (years === 0) {
+      return `${months} ${months === 1 ? 'месяц' : months < 5 ? 'месяца' : 'месяцев'}`;
+    } else if (months === 0) {
+      return `${years} ${years === 1 ? 'год' : years < 5 ? 'года' : 'лет'}`;
+    } else {
+      const yearText = years === 1 ? 'год' : years < 5 ? 'года' : 'лет';
+      const monthText = months === 1 ? 'месяц' : months < 5 ? 'месяца' : 'месяцев';
+      return `${years} ${yearText} ${months} ${monthText}`;
+    }
+  };
+
   const getDaysUntilNextPayment = (credit: Credit) => {
     const today = new Date();
-    const nextPaymentDate = new Date(today.getFullYear(), today.getMonth() + 1, new Date(credit.startDate).getDate());
+    const currentDay = today.getDate();
+    const paymentDay = credit.monthlyPaymentDate;
+
+    let nextPaymentDate: Date;
+
+    if (currentDay < paymentDay) {
+      nextPaymentDate = new Date(today.getFullYear(), today.getMonth(), paymentDay);
+    } else {
+      nextPaymentDate = new Date(today.getFullYear(), today.getMonth() + 1, paymentDay);
+    }
+
     const diffTime = nextPaymentDate.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays;
   };
+
+  const getNextPaymentDate = (credit: Credit) => {
+    const today = new Date();
+    const currentDay = today.getDate();
+    const paymentDay = credit.monthlyPaymentDate;
+
+    let nextPaymentDate: Date;
+
+    if (currentDay < paymentDay) {
+      nextPaymentDate = new Date(today.getFullYear(), today.getMonth(), paymentDay);
+    } else {
+      nextPaymentDate = new Date(today.getFullYear(), today.getMonth() + 1, paymentDay);
+    }
+
+    return nextPaymentDate.toLocaleDateString("ru-RU", {
+      day: "numeric",
+      month: "long"
+    });
+  };
+
+  const getBankName = (bank: Bank | string) => {
+    if (typeof bank === 'string') return bank;
+    return bank.name;
+  };
+
+  const getItemId = (item: any): string => {
+    return item._id || item.id || '';
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -163,7 +674,7 @@ function Credits() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <CreditCard className="w-5 h-5 text-red-600 dark:text-red-400" />
-              <span className="text-red-700 dark:text-red-300">Общий долг</span>
+              <span className="text-sm text-red-700 dark:text-red-300">Общий долг</span>
             </div>
             <p className="text-2xl text-red-900 dark:text-red-100">
               {getTotalDebt().toLocaleString("kk-KZ")} ₸
@@ -175,7 +686,7 @@ function Credits() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <DollarSign className="w-5 h-5 text-orange-600 dark:text-orange-400" />
-              <span className="text-orange-700 dark:text-orange-300">Ежемесячно</span>
+              <span className="text-sm text-orange-700 dark:text-orange-300">Ежемесячно</span>
             </div>
             <p className="text-2xl text-orange-900 dark:text-orange-100">
               {getMonthlyPayments().toLocaleString("kk-KZ")} ₸
@@ -187,7 +698,7 @@ function Credits() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <TrendingDown className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-              <span className="text-blue-700 dark:text-blue-300">Активных кредитов</span>
+              <span className="text-sm text-blue-700 dark:text-blue-300">Активных кредитов</span>
             </div>
             <p className="text-2xl text-blue-900 dark:text-blue-100">
               {getActiveCreditsCount()}
@@ -195,6 +706,37 @@ function Credits() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Кнопка погашения ежемесячных платежей */}
+      {getActiveCreditsCount() > 0 && (
+        <Card className="rounded-2xl bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border-green-200 dark:border-green-800">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="flex items-center gap-2 mb-1">
+                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+                  Погасить ежемесячные платежи
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Автоматически добавить платежи для всех активных кредитов ({getActiveCreditsCount()} шт.) на общую сумму {getMonthlyPayments().toLocaleString("kk-KZ")} ₸
+                </p>
+              </div>
+              <Button
+                onClick={payMonthlyPayments}
+                className="bg-green-500 hover:bg-green-600 text-white shadow-md"
+                disabled={actionLoading}
+              >
+                {actionLoading ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                )}
+                Погасить все
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Основной контент */}
       <Tabs defaultValue="credits" className="w-full">
@@ -208,41 +750,54 @@ function Credits() {
           <Card className="rounded-2xl">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Управление кредитами</CardTitle>
-              <Dialog open={isCreditDialogOpen} onOpenChange={setIsCreditDialogOpen}>
+              <Dialog open={isCreditDialogOpen} onOpenChange={(isOpen) => {
+                setIsCreditDialogOpen(isOpen);
+                if (!isOpen) {
+                  setEditingCredit(null);
+                  setIsOldCredit(false); // <-- ДОБАВИТЬ ЭТО
+                }
+              }}>
                 <DialogTrigger asChild>
-                  <Button>
+                  <Button onClick={() => setEditingCredit(null)}>
                     <Plus className="w-4 h-4 mr-2" />
                     Добавить кредит
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>{editingCredit ? "Редактировать кредит" : "Добавить кредит"}</DialogTitle>
                   </DialogHeader>
                   <form onSubmit={(e) => { e.preventDefault(); handleCreditSubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
                     <div>
                       <Label htmlFor="name">Название кредита</Label>
-                      <Input 
-                        id="name" 
-                        name="name" 
-                        required 
+                      <Input
+                        id="name"
+                        name="name"
+                        required
                         defaultValue={editingCredit?.name}
                         placeholder="Например: Ипотека, Автокредит"
                       />
                     </div>
+
                     <div>
                       <Label htmlFor="bank">Банк</Label>
-                      <Input 
-                        id="bank" 
-                        name="bank" 
-                        required 
-                        defaultValue={editingCredit?.bank}
-                        placeholder="Название банка"
-                      />
+                      <Select name="bank" defaultValue={typeof editingCredit?.bank === 'string' ? editingCredit.bank : editingCredit?.bank?._id} required>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Выберите банк" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {banks.map(bank => (
+                            <SelectItem key={bank._id} value={bank._id}>
+                              {bank.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
+
                     <div>
                       <Label htmlFor="type">Тип кредита</Label>
-                      <Select name="type" defaultValue={editingCredit?.type}>
+                      <Select name="type" defaultValue={editingCredit?.type || "credit"} required>
                         <SelectTrigger>
                           <SelectValue placeholder="Выберите тип" />
                         </SelectTrigger>
@@ -253,79 +808,172 @@ function Credits() {
                         </SelectContent>
                       </Select>
                     </div>
+
                     <div>
                       <Label htmlFor="amount">Сумма кредита (₸)</Label>
-                      <Input 
-                        id="amount" 
-                        name="amount" 
-                        type="number" 
-                        step="0.01" 
-                        required 
+                      <Input
+                        id="amount"
+                        name="amount"
+                        type="number"
+                        step="0.01"
+                        required
                         defaultValue={editingCredit?.amount}
+                        placeholder="1000000"
                       />
                     </div>
+
                     <div>
                       <Label htmlFor="interestRate">Процентная ставка (%)</Label>
-                      <Input 
-                        id="interestRate" 
-                        name="interestRate" 
-                        type="number" 
-                        step="0.01" 
-                        required 
+                      <Input
+                        id="interestRate"
+                        name="interestRate"
+                        type="number"
+                        step="0.01"
+                        required
                         defaultValue={editingCredit?.interestRate}
+                        placeholder="12.5"
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="monthlyPayment">Ежемесячный платеж (₸)</Label>
-                      <Input 
-                        id="monthlyPayment" 
-                        name="monthlyPayment" 
-                        type="number" 
-                        step="0.01" 
-                        required 
-                        defaultValue={editingCredit?.monthlyPayment}
-                      />
+
+                    {/* НОВЫЕ ПОЛЯ: СТАРЫЙ КРЕДИТ И ТЕКУЩАЯ ЗАДОЛЖЕННОСТЬ */}
+                    <div className="space-y-3 p-3 border rounded-lg bg-muted/30">
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id="isOldCredit"
+                          name="isOldCredit"
+                          value="true"
+                          checked={isOldCredit}
+                          onChange={(e) => {
+                            setIsOldCredit(e.target.checked);
+                            if (!e.target.checked) {
+                              // Сбрасываем initialDebt если чекбокс снят
+                              const input = document.getElementById('initialDebt') as HTMLInputElement;
+                              if (input) input.value = '';
+                            }
+                          }}
+                          defaultChecked={editingCredit?.isOldCredit}
+                        />
+                        <Label htmlFor="isOldCredit" className="cursor-pointer font-normal text-sm">
+                          Старый кредит (уже частично погашен)
+                        </Label>
+                      </div>
+
+                      {isOldCredit && (
+                        <div className="pl-6 space-y-2 animate-in slide-in-from-top-2 duration-200">
+                          <Label htmlFor="initialDebt" className="text-sm font-medium">
+                            Текущая задолженность (₸) *
+                          </Label>
+                          <Input
+                            id="initialDebt"
+                            name="initialDebt"
+                            type="number"
+                            step="0.01"
+                            required={isOldCredit}
+                            defaultValue={editingCredit?.initialDebt}
+                            placeholder="500000"
+                            className="bg-background"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Укажите остаток долга на текущий момент. Эта сумма будет использована как текущий баланс кредита.
+                          </p>
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <Label htmlFor="startDate">Дата оформления</Label>
-                      <Input 
-                        id="startDate" 
-                        name="startDate" 
-                        type="date" 
-                        required 
-                        defaultValue={editingCredit?.startDate}
-                      />
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="monthlyPaymentDate">День платежа</Label>
+                        <Input
+                          id="monthlyPaymentDate"
+                          name="monthlyPaymentDate"
+                          type="number"
+                          min="1"
+                          max="31"
+                          step="1"
+                          required
+                          defaultValue={editingCredit?.monthlyPaymentDate}
+                          placeholder="15"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="monthlyPayment">Ежемесячный платеж (₸)</Label>
+                        <Input
+                          id="monthlyPayment"
+                          name="monthlyPayment"
+                          type="number"
+                          step="0.01"
+                          required
+                          defaultValue={editingCredit?.monthlyPayment}
+                          placeholder="50000"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <Label htmlFor="endDate">Дата окончания</Label>
-                      <Input 
-                        id="endDate" 
-                        name="endDate" 
-                        type="date" 
-                        required 
-                        defaultValue={editingCredit?.endDate}
-                      />
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="startDate">Дата оформления</Label>
+                        <Input
+                          id="startDate"
+                          name="startDate"
+                          type="date"
+                          className="date-input"
+                          required
+                          defaultValue={
+                            editingCredit?.startDate
+                              ? new Date(editingCredit.startDate).toISOString().split('T')[0]
+                              : ""
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="endDate">Дата окончания</Label>
+                        <Input
+                          id="endDate"
+                          name="endDate"
+                          type="date"
+                          className="date-input"
+                          required
+                          defaultValue={
+                            editingCredit?.endDate
+                              ? new Date(editingCredit.endDate).toISOString().split('T')[0]
+                              : ""
+                          }
+                        />
+                      </div>
                     </div>
+
                     <div>
                       <Label htmlFor="description">Описание</Label>
-                      <Textarea 
-                        id="description" 
-                        name="description" 
+                      <Textarea
+                        id="description"
+                        name="description"
                         defaultValue={editingCredit?.description}
                         placeholder="Дополнительная информация"
+                        rows={3}
                       />
                     </div>
+
                     <div className="flex gap-2">
-                      <Button type="submit" className="flex-1">
-                        {editingCredit ? "Обновить" : "Добавить"}
+                      <Button type="submit" className="flex-1" disabled={actionLoading}>
+                        {actionLoading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Сохранение...
+                          </>
+                        ) : (
+                          editingCredit ? "Обновить" : "Добавить"
+                        )}
                       </Button>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
+                      <Button
+                        type="button"
+                        variant="outline"
                         onClick={() => {
                           setIsCreditDialogOpen(false);
                           setEditingCredit(null);
+                          setIsOldCredit(false);
                         }}
+                        disabled={actionLoading}
                       >
                         Отмена
                       </Button>
@@ -337,29 +985,33 @@ function Credits() {
             <CardContent>
               <div className="space-y-4">
                 {credits.length === 0 ? (
-                  <div className="text-center py-8">
-                    <CreditCard className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">Кредиты не найдены</p>
-                    <p className="text-sm text-muted-foreground">Добавьте первый кредит для начала отслеживания</p>
+                  <div className="text-center py-12">
+                    <CreditCard className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="mb-2">Кредиты не найдены</h3>
+                    <p className="text-sm text-muted-foreground mb-4">Добавьте первый кредит для начала отслеживания</p>
+                    <Button onClick={() => setIsCreditDialogOpen(true)}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Добавить кредит
+                    </Button>
                   </div>
                 ) : (
                   credits.map(credit => {
                     const progress = getPaymentProgress(credit);
                     const daysUntilPayment = getDaysUntilNextPayment(credit);
-                    
+
                     return (
-                      <div key={credit.id} className="p-4 border rounded-lg">
-                        <div className="flex items-center justify-between mb-3">
+                      <div key={credit._id} className="p-6 border rounded-xl hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between mb-4">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4>{credit.name}</h4>
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3>{credit.name}</h3>
                               <Badge variant={credit.status === "active" ? "default" : credit.status === "paid" ? "secondary" : "destructive"}>
                                 {credit.status === "active" ? "Активный" : credit.status === "paid" ? "Погашен" : "Просрочен"}
                               </Badge>
                               <Badge variant="outline">{credit.type === "credit" ? "Кредит" : credit.type === "loan" ? "Займ" : "Рассрочка"}</Badge>
                             </div>
                             <p className="text-sm text-muted-foreground">
-                              {credit.bank} • {credit.interestRate}% годовых
+                              {getBankName(credit.bank)} • {credit.interestRate}% годовых
                             </p>
                           </div>
                           <div className="flex gap-2">
@@ -370,36 +1022,46 @@ function Credits() {
                                 setEditingCredit(credit);
                                 setIsCreditDialogOpen(true);
                               }}
+                              disabled={actionLoading}
                             >
                               <Edit className="w-4 h-4" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => deleteCredit(credit.id)}
+                              onClick={() => deleteCredit(credit._id)}
+                              disabled={actionLoading}
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
                         </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+
+                        <Separator className="my-4" />
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                           <div>
-                            <p className="text-sm text-muted-foreground">Остаток долга</p>
-                            <p className="text-lg">{credit.currentBalance.toLocaleString("kk-KZ")} ₸</p>
+                            <p className="text-sm text-muted-foreground mb-1">Остаток долга</p>
+                            <p className="text-xl">{credit.currentBalance.toLocaleString("kk-KZ")} ₸</p>
                           </div>
                           <div>
-                            <p className="text-sm text-muted-foreground">Ежемесячный платеж</p>
-                            <p className="text-lg">{credit.monthlyPayment.toLocaleString("kk-KZ")} ₸</p>
+                            <p className="text-sm text-muted-foreground mb-1">Ежемесячный платеж</p>
+                            <p className="text-xl">{credit.monthlyPayment.toLocaleString("kk-KZ")} ₸</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Каждое {credit.monthlyPaymentDate} число
+                            </p>
                           </div>
                           <div>
-                            <p className="text-sm text-muted-foreground">До следующего платежа</p>
-                            <p className="text-lg">{daysUntilPayment} дней</p>
+                            <p className="text-sm text-muted-foreground mb-1">Следующий платеж</p>
+                            <p className="text-xl">{getNextPaymentDate(credit)}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Через {daysUntilPayment} {daysUntilPayment === 1 ? 'день' : daysUntilPayment < 5 ? 'дня' : 'дней'}
+                            </p>
                           </div>
                         </div>
 
-                        <div className="mb-2">
-                          <div className="flex justify-between text-sm text-muted-foreground mb-1">
+                        <div className="mb-4">
+                          <div className="flex justify-between text-sm text-muted-foreground mb-2">
                             <span>Прогресс погашения: {progress.toFixed(1)}%</span>
                             <span>
                               {(credit.amount - credit.currentBalance).toLocaleString("kk-KZ")} ₸ / {credit.amount.toLocaleString("kk-KZ")} ₸
@@ -408,21 +1070,59 @@ function Credits() {
                           <Progress value={progress} className="h-2" />
                         </div>
 
-                        <div className="flex items-center justify-between text-sm">
+                        <div className="mb-4 p-3 bg-muted/50 rounded-lg">
+                          <div className="grid grid-cols-3 gap-4 text-sm">
+                            <div>
+                              <p className="text-muted-foreground mb-1">Срок кредита</p>
+                              <p className="text-lg">
+                                {getCreditTerm(credit)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground mb-1">Переплата по процентам</p>
+                              <p className="text-lg text-orange-600 dark:text-orange-400">
+                                {calculateTotalInterest(credit).toLocaleString("kk-KZ")} ₸
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground mb-1">Общая сумма выплат</p>
+                              <p className="text-lg">
+                                {(credit.amount + calculateTotalInterest(credit)).toLocaleString("kk-KZ")} ₸
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-sm pt-4 border-t">
                           <span className="text-muted-foreground">
                             {new Date(credit.startDate).toLocaleDateString("ru-RU")} - {new Date(credit.endDate).toLocaleDateString("ru-RU")}
                           </span>
                           {credit.status === "active" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setSelectedCreditId(credit.id);
-                                setIsPaymentDialogOpen(true);
-                              }}
-                            >
-                              Добавить платеж
-                            </Button>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="default"
+                                onClick={() => openPaymentDialog(credit, true)}
+                                className="bg-green-500 hover:bg-green-600 text-white shadow-md"
+                                disabled={actionLoading}
+                              >
+                                {actionLoading ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                  <CheckCircle className="w-4 h-4 mr-2" />
+                                )}
+                                Оплатить ежемесячный
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openPaymentDialog(credit, false)}
+                                disabled={actionLoading}
+                              >
+                                <Plus className="w-4 h-4 mr-2" />
+                                Другая сумма
+                              </Button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -440,101 +1140,48 @@ function Credits() {
               <CardTitle>История платежей</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {payments.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">
-                    Пока нет платежей. Добавьте кредиты и регистрируйте платежи.
-                  </p>
+                  <div className="text-center py-12">
+                    <DollarSign className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="mb-2">Нет платежей</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Пока нет платежей. Добавьте кредиты и регистрируйте платежи.
+                    </p>
+                  </div>
                 ) : (
-                  payments.map(payment => {
-                    const credit = credits.find(c => c.id === payment.creditId);
-                    return (
-                      <div key={payment.id} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div className="flex-1">
-                          <h4>{credit?.name || "Неизвестный кредит"}</h4>
-                          <p className="text-sm text-muted-foreground">
-                            {new Date(payment.paymentDate).toLocaleDateString("ru-RU")} • 
-                            Основной долг: {payment.principalAmount.toLocaleString("kk-KZ")} ₸ • 
-                            Проценты: {payment.interestAmount.toLocaleString("kk-KZ")} ₸
-                          </p>
+                  [...payments]
+                    .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime())
+                    .map(payment => {
+                      const credit = credits.find(c => c._id === (typeof payment.credit === 'string' ? payment.credit : payment.credit._id));
+                      const creditData = typeof payment.credit === 'string' ? credit : payment.credit;
+
+                      return (
+                        <div key={payment._id} className="flex items-center justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4>{creditData?.name || "Неизвестный кредит"}</h4>
+                              <Badge variant="secondary">Оплачено</Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {new Date(payment.paymentDate).toLocaleDateString("ru-RU", {
+                                day: "numeric",
+                                month: "long",
+                                year: "numeric"
+                              })}
+                              {creditData && typeof creditData.bank !== 'string' && ` • ${creditData.bank.name}`}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xl">{payment.amount.toLocaleString("kk-KZ")} ₸</span>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <span className="text-lg">{payment.amount.toLocaleString("kk-KZ")} ₸</span>
-                          <Badge variant="secondary" className="ml-2">Оплачено</Badge>
-                        </div>
-                      </div>
-                    );
-                  })
+                      );
+                    })
                 )}
               </div>
             </CardContent>
           </Card>
-
-          {/* Диалог добавления платежа */}
-          <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Добавить платеж</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={(e) => { e.preventDefault(); handlePaymentSubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
-                <div>
-                  <Label htmlFor="amount">Общая сумма платежа (₸)</Label>
-                  <Input 
-                    id="amount" 
-                    name="amount" 
-                    type="number" 
-                    step="0.01" 
-                    required 
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="principalAmount">Основной долг (₸)</Label>
-                  <Input 
-                    id="principalAmount" 
-                    name="principalAmount" 
-                    type="number" 
-                    step="0.01" 
-                    required 
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="interestAmount">Проценты (₸)</Label>
-                  <Input 
-                    id="interestAmount" 
-                    name="interestAmount" 
-                    type="number" 
-                    step="0.01" 
-                    required 
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="paymentDate">Дата платежа</Label>
-                  <Input 
-                    id="paymentDate" 
-                    name="paymentDate" 
-                    type="date" 
-                    required 
-                    defaultValue={new Date().toISOString().split('T')[0]}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button type="submit" className="flex-1">
-                    Добавить платеж
-                  </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => {
-                      setIsPaymentDialogOpen(false);
-                      setSelectedCreditId("");
-                    }}
-                  >
-                    Отмена
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
         </TabsContent>
 
         <TabsContent value="analytics">
@@ -551,19 +1198,319 @@ function Credits() {
                       <XAxis dataKey="month" />
                       <YAxis tickFormatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
                       <Tooltip formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
-                      <Bar dataKey="payments" fill="#ef4444" />
+                      <Bar dataKey="payments" fill="#ef4444" name="Платежи" />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
-                  <p className="text-muted-foreground text-center py-8">
-                    Нет данных для отображения г��афика. Добавьте кредиты для анализа.
-                  </p>
+                  <div className="text-center py-12">
+                    <p className="text-muted-foreground">
+                      Нет данных для отображения графика. Добавьте кредиты для анализа.
+                    </p>
+                  </div>
                 )}
               </CardContent>
             </Card>
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Диалог добавления платежа с выбором источника */}
+      <Dialog open={isPaymentDialogOpen} onOpenChange={(open) => {
+        setIsPaymentDialogOpen(open);
+        if (!open) {
+          setSelectedCreditId("");
+          setPaymentAmount(0);
+          setSelectedIncomeId("cash");
+          setSelectedSourceType("cash");
+          setIsMonthlyPayment(false);
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {isMonthlyPayment ? "Оплатить ежемесячный платеж" : "Добавить платеж"}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handlePaymentSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="paymentAmount">Сумма платежа (₸) *</Label>
+              <Input
+                id="paymentAmount"
+                type="number"
+                step="0.01"
+                required
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || 0)}
+                placeholder="50000"
+                autoFocus
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {isMonthlyPayment ? "Ежемесячный платеж" : "Введите сумму для погашения кредита"}
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="sourceId">Источник оплаты</Label>
+              <Select
+                name="sourceId"
+                value={selectedIncomeId}
+                onValueChange={(value) => {
+                  setSelectedIncomeId(value);
+                  if (value === "cash") {
+                    setSelectedSourceType("cash");
+                  } else if (value.startsWith("deposit-")) {
+                    setSelectedSourceType("deposit");
+                  } else {
+                    setSelectedSourceType("income");
+                  }
+                }}
+                defaultValue="cash"
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите источник оплаты" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Банкомат (наличка)</SelectItem>
+
+                  {availableIncomes.length > 0 && (
+                    <>
+                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                        Доходы
+                      </div>
+                      {availableIncomes.map(income => {
+                        const typeLabels: Record<string, string> = {
+                          salary: "Зарплата",
+                          bonus: "Бонус",
+                          freelance: "Фриланс",
+                          business: "Бизнес",
+                          investment: "Инвестиции",
+                          rental: "Аренда",
+                          gift: "Подарок",
+                          other: "Другое"
+                        };
+
+                        const typeLabel = typeLabels[income.type] || income.type;
+
+                        return (
+                          <SelectItem key={getItemId(income)} value={getItemId(income)}>
+                            {income.source} ({typeLabel}) - Доступно: {income.availableAmount.toLocaleString("ru-RU")} ₸
+                          </SelectItem>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  {availableDeposits.length > 0 && (
+                    <>
+                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-2">
+                        Депозиты
+                      </div>
+                      {availableDeposits.map(deposit => {
+                        const depositTypeLabels: Record<string, string> = {
+                          fixed: "Срочный",
+                          savings: "Накопительный",
+                          investment: "Инвестиционный",
+                          spending: "Расходный"
+                        };
+
+                        const typeLabel = depositTypeLabels[deposit.type] || deposit.type;
+
+                        return (
+                          <SelectItem key={`deposit-${deposit.id}`} value={`deposit-${deposit.id}`}>
+                            {deposit.name} ({typeLabel}) - {deposit.currentBalance.toLocaleString("ru-RU")} ₸
+                          </SelectItem>
+                        );
+                      })}
+                    </>
+                  )}
+                </SelectContent>
+              </Select>
+              {availableIncomes.length === 0 && availableDeposits.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Нет доступных доходов и депозитов. Все средства использованы или отсутствуют.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="notes">Примечания (необязательно)</Label>
+              <Textarea
+                id="notes"
+                name="notes"
+                placeholder="Дополнительная информация о платеже"
+                rows={3}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button type="submit" className="flex-1" disabled={actionLoading}>
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Добавление...
+                  </>
+                ) : (
+                  "Добавить платеж"
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsPaymentDialogOpen(false);
+                  setSelectedCreditId("");
+                  setPaymentAmount(0);
+                  setSelectedIncomeId("cash");
+                  setSelectedSourceType("cash");
+                  setIsMonthlyPayment(false);
+                }}
+                disabled={actionLoading}
+              >
+                Отмена
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Диалог массового погашения платежей */}
+      <Dialog open={isBulkPaymentDialogOpen} onOpenChange={(open) => {
+        setIsBulkPaymentDialogOpen(open);
+        if (!open) {
+          setPaymentAmount(0);
+          setSelectedIncomeId("cash");
+          setSelectedSourceType("cash");
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Погасить все ежемесячные платежи</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleBulkPaymentSubmit} className="space-y-4">
+            <div className="p-4 bg-muted rounded-lg">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm text-muted-foreground">Количество кредитов:</span>
+                <span className="font-semibold">{getActiveCreditsCount()} шт.</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Общая сумма:</span>
+                <span className="text-lg font-bold">{getMonthlyPayments().toLocaleString("kk-KZ")} ₸</span>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="bulkSourceId">Источник оплаты *</Label>
+              <Select
+                name="sourceId"
+                value={selectedIncomeId}
+                onValueChange={(value) => {
+                  setSelectedIncomeId(value);
+                  if (value === "cash") {
+                    setSelectedSourceType("cash");
+                  } else if (value.startsWith("deposit-")) {
+                    setSelectedSourceType("deposit");
+                  } else {
+                    setSelectedSourceType("income");
+                  }
+                }}
+                defaultValue="cash"
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите источник оплаты" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Банкомат (наличка)</SelectItem>
+
+                  {availableIncomes.length > 0 && (
+                    <>
+                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                        Доходы
+                      </div>
+                      {availableIncomes.map(income => {
+                        const typeLabels: Record<string, string> = {
+                          salary: "Зарплата",
+                          bonus: "Бонус",
+                          freelance: "Фриланс",
+                          business: "Бизнес",
+                          investment: "Инвестиции",
+                          rental: "Аренда",
+                          gift: "Подарок",
+                          other: "Другое"
+                        };
+
+                        const typeLabel = typeLabels[income.type] || income.type;
+
+                        return (
+                          <SelectItem key={getItemId(income)} value={getItemId(income)}>
+                            {income.source} ({typeLabel}) - Доступно: {income.availableAmount.toLocaleString("ru-RU")} ₸
+                          </SelectItem>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  {availableDeposits.length > 0 && (
+                    <>
+                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-2">
+                        Депозиты
+                      </div>
+                      {availableDeposits.map(deposit => {
+                        const depositTypeLabels: Record<string, string> = {
+                          fixed: "Срочный",
+                          savings: "Накопительный",
+                          investment: "Инвестиционный",
+                          spending: "Расходный"
+                        };
+
+                        const typeLabel = depositTypeLabels[deposit.type] || deposit.type;
+
+                        return (
+                          <SelectItem key={`deposit-${deposit.id}`} value={`deposit-${deposit.id}`}>
+                            {deposit.name} ({typeLabel}) - {deposit.currentBalance.toLocaleString("ru-RU")} ₸
+                          </SelectItem>
+                        );
+                      })}
+                    </>
+                  )}
+                </SelectContent>
+              </Select>
+              {availableIncomes.length === 0 && availableDeposits.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Нет доступных доходов и депозитов. Все средства использованы или отсутствуют.
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <Button type="submit" className="flex-1" disabled={actionLoading}>
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Погашение...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Погасить все
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsBulkPaymentDialogOpen(false);
+                  setPaymentAmount(0);
+                  setSelectedIncomeId("cash");
+                  setSelectedSourceType("cash");
+                }}
+                disabled={actionLoading}
+              >
+                Отмена
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

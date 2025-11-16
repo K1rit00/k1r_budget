@@ -21,7 +21,7 @@ export interface Category {
   description?: string;
 }
 
-export interface IncomeCategory extends Category {}
+export interface IncomeCategory extends Category { }
 
 export interface ExpenseCategory extends Category {
   isDefault: boolean;
@@ -99,12 +99,15 @@ export interface Credit {
   amount: number;
   currentBalance: number;
   interestRate: number;
+  isOldCredit?: boolean; // НОВОЕ ПОЛЕ
+  initialDebt?: number; // НОВОЕ ПОЛЕ
   monthlyPayment: number;
   startDate: string;
   endDate: string;
   type: "credit" | "loan" | "installment";
   status: "active" | "paid" | "overdue";
   description?: string;
+  monthlyPaymentDate: number;
 }
 
 export interface CreditPayment {

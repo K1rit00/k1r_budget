@@ -140,7 +140,249 @@ exports.validateRecurringIncome = (req, res, next) => {
 
   next();
 };
+/**
+ * Валидация кредита
+ */
+exports.validateCredit = (req, res, next) => {
+  const { 
+    name, 
+    bank, 
+    amount, 
+    interestRate, 
+    monthlyPayment, 
+    monthlyPaymentDate,
+    startDate, 
+    endDate, 
+    type 
+  } = req.body;
+  const errors = [];
 
+  // Проверка названия
+  if (!name || name.trim() === '') {
+    errors.push('Название кредита обязательно');
+  } else if (name.length > 200) {
+    errors.push('Название не может быть длиннее 200 символов');
+  }
+
+  // Проверка банка (должен быть ObjectId)
+  if (!bank || bank.trim() === '') {
+    errors.push('Банк обязателен');
+  } else if (!/^[0-9a-fA-F]{24}$/.test(bank)) {
+    errors.push('Некорректный ID банка');
+  }
+
+  // Проверка суммы кредита
+  if (!amount) {
+    errors.push('Сумма кредита обязательна');
+  } else {
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      errors.push('Сумма кредита должна быть положительным числом');
+    }
+    if (amountNum > 999999999999) {
+      errors.push('Сумма кредита слишком большая');
+    }
+  }
+
+  // Проверка процентной ставки
+  if (interestRate === undefined || interestRate === null || interestRate === '') {
+    errors.push('Процентная ставка обязательна');
+  } else {
+    const rate = parseFloat(interestRate);
+    if (isNaN(rate) || rate < 0 || rate > 100) {
+      errors.push('Процентная ставка должна быть от 0 до 100');
+    }
+  }
+
+  // Проверка ежемесячного платежа
+  if (!monthlyPayment) {
+    errors.push('Ежемесячный платеж обязателен');
+  } else {
+    const payment = parseFloat(monthlyPayment);
+    if (isNaN(payment) || payment <= 0) {
+      errors.push('Ежемесячный платеж должен быть положительным числом');
+    }
+    if (payment > 999999999) {
+      errors.push('Ежемесячный платеж слишком большой');
+    }
+  }
+
+  // Проверка дня ежемесячного платежа
+  if (!monthlyPaymentDate && monthlyPaymentDate !== 0) {
+    errors.push('День ежемесячного платежа обязателен');
+  } else {
+    const day = parseInt(monthlyPaymentDate);
+    if (isNaN(day) || day < 1 || day > 31) {
+      errors.push('День платежа должен быть от 1 до 31');
+    }
+  }
+
+  // Проверка даты начала
+  if (!startDate) {
+    errors.push('Дата начала обязательна');
+  } else {
+    const start = new Date(startDate);
+    if (isNaN(start.getTime())) {
+      errors.push('Некорректная дата начала');
+    }
+  }
+
+  // Проверка даты окончания
+  if (!endDate) {
+    errors.push('Дата окончания обязательна');
+  } else {
+    const end = new Date(endDate);
+    if (isNaN(end.getTime())) {
+      errors.push('Некорректная дата окончания');
+    }
+
+    if (startDate) {
+      const start = new Date(startDate);
+      const endParsed = new Date(endDate);
+
+      // Приводим даты к началу дня для корректного сравнения
+      start.setHours(0, 0, 0, 0);
+      endParsed.setHours(0, 0, 0, 0);
+
+      if (endParsed <= start) {
+        errors.push('Дата окончания должна быть после даты начала');
+      }
+    }
+  }
+
+  // Проверка типа кредита
+  const validTypes = ['credit', 'loan', 'installment'];
+  if (!type) {
+    errors.push('Тип кредита обязателен');
+  } else if (!validTypes.includes(type)) {
+    errors.push('Недопустимый тип кредита');
+  }
+
+  // Проверка статуса (если указан)
+  const validStatuses = ['active', 'paid', 'overdue', 'cancelled'];
+  if (req.body.status && !validStatuses.includes(req.body.status)) {
+    errors.push('Недопустимый статус кредита');
+  }
+
+  // Проверка описания (если есть)
+  if (req.body.description && req.body.description.length > 500) {
+    errors.push('Описание не может быть длиннее 500 символов');
+  }
+
+  // Проверка текущего баланса (если указан)
+  if (req.body.currentBalance !== undefined && req.body.currentBalance !== null) {
+    const balance = parseFloat(req.body.currentBalance);
+    if (isNaN(balance) || balance < 0) {
+      errors.push('Текущий баланс не может быть отрицательным');
+    }
+    
+    // Баланс не может превышать сумму кредита
+    if (amount && balance > parseFloat(amount)) {
+      errors.push('Текущий баланс не может превышать сумму кредита');
+    }
+  }
+
+  // Проверка номера счета (если есть)
+  if (req.body.accountNumber && req.body.accountNumber.length > 100) {
+    errors.push('Номер счета не может быть длиннее 100 символов');
+  }
+
+  // Проверка номера договора (если есть)
+  if (req.body.contractNumber && req.body.contractNumber.length > 100) {
+    errors.push('Номер договора не может быть длиннее 100 символов');
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Ошибка валидации',
+      errors
+    });
+  }
+
+  next();
+};
+
+/**
+ * Валидация платежа по кредиту
+ */
+exports.validateCreditPayment = (req, res, next) => {
+  const { amount, paymentDate, principalAmount, interestAmount } = req.body;
+  const errors = [];
+
+  // Проверка суммы платежа
+  if (!amount) {
+    errors.push('Сумма платежа обязательна');
+  } else {
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      errors.push('Сумма платежа должна быть положительным числом');
+    }
+    if (amountNum > 999999999) {
+      errors.push('Сумма платежа слишком большая');
+    }
+  }
+
+  // Проверка даты платежа
+  if (paymentDate) {
+    const date = new Date(paymentDate);
+    if (isNaN(date.getTime())) {
+      errors.push('Некорректная дата платежа');
+    }
+  }
+
+  // Проверка суммы основного долга
+  if (principalAmount !== undefined && principalAmount !== null) {
+    const principal = parseFloat(principalAmount);
+    if (isNaN(principal) || principal < 0) {
+      errors.push('Сумма основного долга не может быть отрицательной');
+    }
+  }
+
+  // Проверка суммы процентов
+  if (interestAmount !== undefined && interestAmount !== null) {
+    const interest = parseFloat(interestAmount);
+    if (isNaN(interest) || interest < 0) {
+      errors.push('Сумма процентов не может быть отрицательной');
+    }
+  }
+
+  // Проверка, что сумма = основной долг + проценты (с допустимой погрешностью)
+  if (amount && principalAmount !== undefined && interestAmount !== undefined) {
+    const totalCalculated = parseFloat(principalAmount) + parseFloat(interestAmount);
+    const difference = Math.abs(totalCalculated - parseFloat(amount));
+    
+    if (difference > 0.01) {
+      errors.push('Сумма платежа должна быть равна сумме основного долга и процентов');
+    }
+  }
+
+  // Проверка примечаний (если есть)
+  if (req.body.notes && req.body.notes.length > 500) {
+    errors.push('Примечания не могут быть длиннее 500 символов');
+  }
+
+  // Проверка номера квитанции (если есть)
+  if (req.body.receiptNumber && req.body.receiptNumber.length > 100) {
+    errors.push('Номер квитанции не может быть длиннее 100 символов');
+  }
+
+  // Проверка статуса платежа (если указан)
+  const validStatuses = ['paid', 'pending', 'cancelled'];
+  if (req.body.status && !validStatuses.includes(req.body.status)) {
+    errors.push('Недопустимый статус платежа');
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Ошибка валидации',
+      errors
+    });
+  }
+
+  next();
+};
 // Валидация Expense (расходы)
 exports.validateExpense = (req, res, next) => {
   const { title, amount, date, category } = req.body;
@@ -215,79 +457,6 @@ exports.validateCategory = (req, res, next) => {
     errors.push('Тип категории обязателен');
   } else if (!validTypes.includes(type)) {
     errors.push('Недопустимый тип категории');
-  }
-
-  if (errors.length > 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Ошибка валидации',
-      errors
-    });
-  }
-
-  next();
-};
-
-// Валидация Credit (кредиты)
-exports.validateCredit = (req, res, next) => {
-  const { name, totalAmount, monthlyPayment, interestRate, startDate, endDate } = req.body;
-  const errors = [];
-
-  // Проверка названия
-  if (!name || name.trim() === '') {
-    errors.push('Название кредита обязательно');
-  } else if (name.length > 200) {
-    errors.push('Название не может быть длиннее 200 символов');
-  }
-
-  // Проверка общей суммы
-  if (!totalAmount) {
-    errors.push('Общая сумма обязательна');
-  } else {
-    const amount = parseFloat(totalAmount);
-    if (isNaN(amount) || amount <= 0) {
-      errors.push('Общая сумма должна быть положительным числом');
-    }
-  }
-
-  // Проверка ежемесячного платежа
-  if (!monthlyPayment) {
-    errors.push('Ежемесячный платеж обязателен');
-  } else {
-    const payment = parseFloat(monthlyPayment);
-    if (isNaN(payment) || payment <= 0) {
-      errors.push('Ежемесячный платеж должен быть положительным числом');
-    }
-  }
-
-  // Проверка процентной ставки
-  if (interestRate !== undefined && interestRate !== null) {
-    const rate = parseFloat(interestRate);
-    if (isNaN(rate) || rate < 0 || rate > 100) {
-      errors.push('Процентная ставка должна быть от 0 до 100');
-    }
-  }
-
-  // Проверка дат
-  if (startDate) {
-    const start = new Date(startDate);
-    if (isNaN(start.getTime())) {
-      errors.push('Некорректная дата начала');
-    }
-  }
-
-  if (endDate) {
-    const end = new Date(endDate);
-    if (isNaN(end.getTime())) {
-      errors.push('Некорректная дата окончания');
-    }
-
-    if (startDate) {
-      const start = new Date(startDate);
-      if (end <= start) {
-        errors.push('Дата окончания должна быть после даты начала');
-      }
-    }
   }
 
   if (errors.length > 0) {

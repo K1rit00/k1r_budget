@@ -254,24 +254,100 @@ export const apiService = {
     return response.data;
   },
 
-  // Credits
-  getCredits: async () => {
-    const response = await api.get('/credits');
+  // Credits (Кредиты)
+  getCredits: async (params?: { status?: string; bank?: string; type?: string; sortBy?: string; order?: string }) => {
+    const response = await api.get('/credits', { params });
     return response.data;
   },
 
-  createCredit: async (data: any) => {
-    const response = await api.post('/credits', data);
+  getCreditById: async (id: string) => {
+    const response = await api.get(`/credits/${id}`);
     return response.data;
   },
 
-  updateCredit: async (id: string, data: any) => {
+createCredit: async (data: {
+  name: string;
+  bank: string;
+  amount: number;
+  interestRate: number;
+  isOldCredit?: boolean; // НОВОЕ ПОЛЕ
+  initialDebt?: number; // НОВОЕ ПОЛЕ
+  monthlyPayment: number;
+  monthlyPaymentDate: number;
+  startDate: string;
+  endDate: string;
+  type: 'credit' | 'loan' | 'installment';
+  description?: string;
+  accountNumber?: string;
+  contractNumber?: string;
+}) => {
+  const response = await api.post('/credits', data);
+  return response.data;
+},
+
+  updateCredit: async (id: string, data: {
+    name?: string;
+    bank?: string;
+    amount?: number;
+    currentBalance?: number;
+    interestRate?: number;
+    monthlyPayment?: number;
+    monthlyPaymentDate?: number;
+    startDate?: string;
+    endDate?: string;
+    type?: 'credit' | 'loan' | 'installment';
+    status?: 'active' | 'paid' | 'overdue' | 'cancelled';
+    description?: string;
+    accountNumber?: string;
+    contractNumber?: string;
+    isOldCredit?: boolean; // НОВОЕ ПОЛЕ
+    initialDebt?: number; // НОВОЕ ПОЛЕ
+  }) => {
     const response = await api.put(`/credits/${id}`, data);
     return response.data;
   },
 
   deleteCredit: async (id: string) => {
     const response = await api.delete(`/credits/${id}`);
+    return response.data;
+  },
+
+  // Credit Payments (Платежи по кредитам)
+  addPayment: async (creditId: string, data: {
+    amount: number;
+    paymentDate?: string;
+    principalAmount?: number;
+    interestAmount?: number;
+    notes?: string;
+    receiptNumber?: string;
+  }) => {
+    const response = await api.post(`/credits/${creditId}/payments`, data);
+    return response.data;
+  },
+
+  getCreditPayments: async (creditId: string) => {
+    const response = await api.get(`/credits/${creditId}/payments`);
+    return response.data;
+  },
+
+  getAllPayments: async (params?: { startDate?: string; endDate?: string; status?: string }) => {
+    const response = await api.get('/credits/payments', { params });
+    return response.data;
+  },
+
+  // Credit Statistics & Utilities
+  getCreditStatistics: async () => {
+    const response = await api.get('/credits/statistics');
+    return response.data;
+  },
+
+  getUpcomingPayments: async (days?: number) => {
+    const response = await api.get('/credits/upcoming', { params: { days } });
+    return response.data;
+  },
+
+  payMonthlyPayments: async () => {
+    const response = await api.post('/credits/pay-monthly');
     return response.data;
   },
 

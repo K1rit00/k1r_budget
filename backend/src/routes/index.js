@@ -10,6 +10,10 @@ const depositRoutes = require('./deposits');
 const rentRoutes = require('./rent');
 const banksRoutes = require('./banks');
 const utilityTypesRoutes = require('./utilityTypes');
+const creditRoutes = require('./credit');
+
+// Credit routes
+router.use('/credits', creditRoutes);
 
 // Mount routes
 router.use('/auth', authRoutes);
@@ -37,6 +41,7 @@ router.get('/', (req, res) => {
       rent: '/rent',
       deposits: '/deposits',
       banks: '/banks',
+      credits: '/credits',
       utilityTypes: '/utility-types'
     }
   });
