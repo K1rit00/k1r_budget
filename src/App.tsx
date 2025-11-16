@@ -5,7 +5,8 @@ import { Auth } from "./components/Auth";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
-import { LogOut } from "lucide-react";
+import { toast } from "sonner";
+import { LogOut, Clock } from "lucide-react";
 import { AppProvider, useAppContext, useAppActions } from "./contexts/AppContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingFallback } from "./components/common/LoadingFallback";
@@ -13,7 +14,7 @@ import { NotificationCenter } from "./components/common/NotificationCenter";
 import { apiService } from "./services/api";
 import type { User } from "./types";
 
-// Локальные константы для избежания проблем с импортом
+// Локальные константы
 const ROUTES = {
   DASHBOARD: "dashboard",
   QUICK_EXPENSES: "quick-expenses", 
@@ -56,7 +57,7 @@ const PAGE_DESCRIPTIONS = {
   [ROUTES.DEPOSITS]: "Управление депозитами, накопления и расходные портфели",
 } as const;
 
-// Lazy loading компонентов для оптимизации
+// Lazy loading компонентов
 const Dashboard = lazy(() => import("./components/Dashboard"));
 const PaymentCalendar = lazy(() => import("./components/PaymentCalendar"));
 const QuickExpenseAdd = lazy(() => import("./components/QuickExpenseAdd"));
@@ -73,18 +74,17 @@ function AppContent() {
   const { state } = useAppContext();
   const { setUser, setCurrentView } = useAppActions();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // Проверяем сохраненного пользователя при загрузке приложения
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // Проверяем есть ли токен
         if (!apiService.isAuthenticated()) {
           setIsCheckingAuth(false);
           return;
         }
 
-        // Если есть токен, но нет пользователя в state, загружаем данные
         if (!state.user) {
           const savedUser = await apiService.getSavedUser();
           if (savedUser) {
@@ -99,50 +99,101 @@ function AppContent() {
     };
 
     checkAuth();
-  }, []); // Запускаем только один раз при монтировании
+  }, []);
+
+  // Функция для обработки истечения сессии
+  const handleSessionExpiration = () => {
+    console.log('Session expired - logging out user');
+    
+    // Показываем уведомление
+    toast.error('Ваша сессия истекла', {
+      description: 'Пожалуйста, войдите снова для продолжения работы',
+      icon: <Clock className="w-5 h-5" />,
+      duration: 5000,
+    });
+    
+    // Устанавливаем флаг истечения сессии
+    setSessionExpired(true);
+    
+    // Очищаем пользователя и перенаправляем на страницу входа
+    setUser(null);
+    setCurrentView('dashboard');
+  };
+
+  // Слушаем событие истечения сессии
+  useEffect(() => {
+    window.addEventListener('session-expired', handleSessionExpiration);
+
+    return () => {
+      window.removeEventListener('session-expired', handleSessionExpiration);
+    };
+  }, []);
+
+  // Автоматическая проверка активности каждые 5 минут
+  useEffect(() => {
+    if (!state.user) return;
+
+    const checkActivity = setInterval(() => {
+      // Проверяем, есть ли токен
+      if (!apiService.isAuthenticated()) {
+        window.dispatchEvent(new Event('session-expired'));
+      }
+    }, 1 * 60 * 1000); // 1 минуту
+
+    return () => clearInterval(checkActivity);
+  }, [state.user]);
 
   const handleLogin = (userData: User) => {
     setUser(userData);
+    setSessionExpired(false);
+    
+    // Показываем приветственное сообщение
+    toast.success('Добро пожаловать!', {
+      description: `Вы успешно вошли в систему`,
+      duration: 3000
+    });
   };
 
   const handleLogout = async () => {
     try {
       await apiService.logout();
+      toast.success('Вы успешно вышли из системы');
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      setCurrentView(ROUTES.DASHBOARD);
+      setCurrentView('dashboard');
       setUser(null);
+      setSessionExpired(false);
     }
   };
 
-  // Мемоизируем компоненты для предотвращения излишних ре-рендеров
+  // Мемоизируем компоненты
   const renderContent = useMemo(() => {
-    const currentRoute = state.currentView || ROUTES.DASHBOARD;
+    const currentRoute = state.currentView || 'dashboard';
     
     const getComponent = () => {
       switch (currentRoute) {
-        case ROUTES.DASHBOARD:
+        case 'dashboard':
           return <Dashboard />;
-        case ROUTES.QUICK_EXPENSES:
+        case 'quick-expenses':
           return <QuickExpenseAdd />;
-        case ROUTES.CALENDAR:
+        case 'calendar':
           return <PaymentCalendar />;
-        case ROUTES.PROFILE:
+        case 'profile':
           return <Profile />;
-        case ROUTES.REFERENCES:
+        case 'references':
           return <References />;
-        case ROUTES.INCOME:
+        case 'income':
           return <Income />;
-        case ROUTES.CREDITS:
+        case 'credits':
           return <Credits />;
-        case ROUTES.RENT:
+        case 'rent':
           return <Rent />;
-        case ROUTES.UTILITIES:
+        case 'utilities':
           return <Utilities />;
-        case ROUTES.MONTHLY:
+        case 'monthly':
           return <MonthlyExpenses />;
-        case ROUTES.DEPOSITS:
+        case 'deposits':
           return <Deposits />;
         default:
           return <Dashboard />;
@@ -158,21 +209,32 @@ function AppContent() {
     );
   }, [state.currentView]);
 
-  const pageTitle = PAGE_TITLES[state.currentView as keyof typeof PAGE_TITLES] || PAGE_TITLES[ROUTES.DASHBOARD] || "Главная";
+  const pageTitle = PAGE_TITLES[state.currentView as keyof typeof PAGE_TITLES] || "Главная";
   
   const pageDescription = useMemo(() => {
-    const description = PAGE_DESCRIPTIONS[state.currentView as keyof typeof PAGE_DESCRIPTIONS];
-    return typeof description === "function" && state.user ? description(state.user.name) : description || "Добро пожаловать в систему учёта бюджета";
+    const currentView = state.currentView as keyof typeof PAGE_DESCRIPTIONS;
+    const description = PAGE_DESCRIPTIONS[currentView];
+    
+    if (typeof description === "function") {
+      return state.user ? description(state.user.name) : "Добро пожаловать в систему учёта бюджета";
+    }
+    
+    return description || "Добро пожаловать в систему учёта бюджета";
   }, [state.currentView, state.user]);
 
   // Показываем загрузку пока проверяем авторизацию
   if (isCheckingAuth) {
-    return <LoadingFallback type="page" />;
+    return <LoadingFallback type="spinner" />;
   }
 
   // Если пользователь не авторизован, показываем форму входа
   if (!state.user) {
-    return <Auth onLogin={handleLogin} />;
+    return (
+      <Auth 
+        onLogin={handleLogin} 
+        sessionExpired={sessionExpired}
+      />
+    );
   }
 
   return (

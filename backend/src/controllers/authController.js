@@ -1,5 +1,5 @@
 const User = require('../models/User');
-const { verifyRefreshToken } = require('../middleware/auth');
+const { verifyRefreshToken, SERVER_START_TIME } = require('../middleware/auth');
 
 // @desc    Register user
 // @route   POST /api/v1/auth/register
@@ -24,7 +24,9 @@ exports.register = async (req, res) => {
       firstName,
       lastName,
       login,
-      password
+      password,
+      lastActivity: Date.now(),
+      serverStartTime: SERVER_START_TIME
     });
     console.log('User created:', user._id);
 
@@ -34,8 +36,10 @@ exports.register = async (req, res) => {
     const refreshToken = user.generateRefreshToken();
 
     console.log('Saving refresh token...');
-    // Save refresh token
+    // Save refresh token and set activity
     user.refreshToken = refreshToken;
+    user.lastLogin = Date.now();
+    user.lastActivity = Date.now();
     await user.save();
 
     console.log('Registration successful');
@@ -114,6 +118,8 @@ exports.login = async (req, res) => {
     // Update user
     user.refreshToken = refreshToken;
     user.lastLogin = Date.now();
+    user.lastActivity = Date.now();
+    user.serverStartTime = SERVER_START_TIME;
     await user.save();
 
     res.status(200).json({
@@ -152,7 +158,8 @@ exports.refreshToken = async (req, res) => {
     if (!refreshToken) {
       return res.status(400).json({
         success: false,
-        message: 'Refresh token не предоставлен'
+        message: 'Refresh token не предоставлен',
+        code: 'NO_REFRESH_TOKEN'
       });
     }
 
@@ -164,7 +171,21 @@ exports.refreshToken = async (req, res) => {
     if (!user || user.refreshToken !== refreshToken) {
       return res.status(401).json({
         success: false,
-        message: 'Недействительный refresh token'
+        message: 'Недействительный refresh token',
+        code: 'INVALID_REFRESH_TOKEN'
+      });
+    }
+
+    // Check if session is valid
+    if (!user.isSessionValid(SERVER_START_TIME)) {
+      // Clear refresh token
+      user.refreshToken = undefined;
+      await user.save();
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Сессия истекла. Пожалуйста, войдите снова',
+        code: 'SESSION_EXPIRED'
       });
     }
 
@@ -172,8 +193,9 @@ exports.refreshToken = async (req, res) => {
     const newAccessToken = user.generateAuthToken();
     const newRefreshToken = user.generateRefreshToken();
 
-    // Update refresh token
+    // Update refresh token and activity
     user.refreshToken = newRefreshToken;
+    user.lastActivity = Date.now();
     await user.save();
 
     res.status(200).json({
@@ -188,7 +210,8 @@ exports.refreshToken = async (req, res) => {
   } catch (error) {
     res.status(401).json({
       success: false,
-      message: 'Недействительный refresh token'
+      message: 'Недействительный refresh token',
+      code: 'INVALID_REFRESH_TOKEN'
     });
   }
 };

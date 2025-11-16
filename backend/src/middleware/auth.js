@@ -2,6 +2,11 @@ const jwt = require('jsonwebtoken');
 const { config } = require('../config/env');
 const User = require('../models/User');
 
+// Время запуска сервера
+const SERVER_START_TIME = new Date();
+console.log('--- НОВЫЙ ЗАПУСК БЭКЕНД СЕРВЕРА ---');
+console.log('SERVER_START_TIME установлен на:', SERVER_START_TIME);
+
 const protect = async (req, res, next) => {
   try {
     let token;
@@ -13,7 +18,8 @@ const protect = async (req, res, next) => {
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: 'Не авторизован, токен не предоставлен'
+        message: 'Не авторизован, токен не предоставлен',
+        code: 'NO_TOKEN'
       });
     }
 
@@ -24,28 +30,57 @@ const protect = async (req, res, next) => {
       if (!req.user) {
         return res.status(401).json({
           success: false,
-          message: 'Пользователь не найден'
+          message: 'Пользователь не найден',
+          code: 'USER_NOT_FOUND'
         });
       }
 
       if (!req.user.isActive) {
         return res.status(401).json({
           success: false,
-          message: 'Аккаунт деактивирован'
+          message: 'Аккаунт деактивирован',
+          code: 'ACCOUNT_DEACTIVATED'
         });
       }
 
+      // Проверяем валидность сессии
+      if (!req.user.isSessionValid(SERVER_START_TIME)) {
+        // Очищаем refresh token
+        req.user.refreshToken = undefined;
+        await req.user.save();
+        
+        return res.status(401).json({
+          success: false,
+          message: 'Сессия истекла. Пожалуйста, войдите снова',
+          code: 'SESSION_EXPIRED'
+        });
+      }
+
+      // Обновляем время последней активности
+      req.user.lastActivity = Date.now();
+      await req.user.save();
+
       next();
     } catch (error) {
+      if (error.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          success: false,
+          message: 'Токен истёк',
+          code: 'TOKEN_EXPIRED'
+        });
+      }
+      
       return res.status(401).json({
         success: false,
-        message: 'Недействительный токен'
+        message: 'Недействительный токен',
+        code: 'INVALID_TOKEN'
       });
     }
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: 'Ошибка авторизации'
+      message: 'Ошибка авторизации',
+      code: 'AUTH_ERROR'
     });
   }
 };
@@ -58,4 +93,4 @@ const verifyRefreshToken = (token) => {
   }
 };
 
-module.exports = { protect, verifyRefreshToken };
+module.exports = { protect, verifyRefreshToken, SERVER_START_TIME };

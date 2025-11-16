@@ -18,17 +18,30 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle token refresh
+// Handle token refresh and session expiration
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+
+    // Check for session expired error
+    if (error.response?.data?.code === 'SESSION_EXPIRED') {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      window.dispatchEvent(new Event('session-expired'));
+      return Promise.reject(error);
+    }
 
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
       try {
         const refreshToken = localStorage.getItem('refreshToken');
+
+        if (!refreshToken) {
+          throw new Error('No refresh token');
+        }
+
         const response = await axios.post(`${API_URL}/auth/refresh`, {
           refreshToken,
         });
@@ -40,10 +53,17 @@ api.interceptors.response.use(
 
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
-      } catch (refreshError) {
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        window.location.href = '/login';
+      } catch (refreshError: any) {
+        // Check if session expired during refresh
+        if (refreshError.response?.data?.code === 'SESSION_EXPIRED') {
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+          window.dispatchEvent(new Event('session-expired'));
+        } else {
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+          window.location.href = '/';
+        }
         return Promise.reject(refreshError);
       }
     }
@@ -129,16 +149,18 @@ export const apiService = {
       const response = await api.get('/auth/me');
       if (response.data.success) {
         return {
-          email: response.data.data.login,
-          name: response.data.data.fullName || response.data.data.firstName,
-          id: response.data.data.id
+          email: response.data.data.user.login,
+          name: response.data.data.user.fullName || response.data.data.user.firstName,
+          id: response.data.data.user.id
         };
       }
       return null;
-    } catch (error) {
-      // If token is invalid, clear it
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
+    } catch (error: any) {
+      // If token is invalid or session expired, clear it
+      if (error.response?.data?.code === 'SESSION_EXPIRED') {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+      }
       return null;
     }
   },
