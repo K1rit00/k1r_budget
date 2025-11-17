@@ -32,6 +32,14 @@ interface UtilityItem {
   name: string;
   amount: number;
 }
+interface IncomeCategory {
+  _id: string;
+  id?: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  type: 'income';
+}
 
 interface RentProperty {
   _id: string;
@@ -75,7 +83,12 @@ interface AvailableIncome {
   availableAmount: number;
   usedAmount: number;
   date: string;
-  type: string;
+  type: string | {
+    _id: string;
+    name: string;
+    icon?: string;
+    color?: string;
+  };
   description?: string;
 }
 
@@ -111,6 +124,7 @@ function Rent() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [incomeCategories, setIncomeCategories] = useState<IncomeCategory[]>([]);
 
   const [isPropertyDialogOpen, setIsPropertyDialogOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
@@ -142,7 +156,8 @@ function Rent() {
         loadStatistics(),
         loadUtilityTypes(),
         loadAvailableIncomes(),
-        loadAvailableDeposits()
+        loadAvailableDeposits(),
+        loadIncomeCategories() // ДОБАВИТЬ
       ]);
     } catch (err: any) {
       console.error("Error loading data:", err);
@@ -153,27 +168,49 @@ function Rent() {
     }
   };
 
-const loadProperties = async () => {
+  const loadIncomeCategories = async () => {
+    try {
+      const response = await apiService.getCategories('income');
+      setIncomeCategories(response.data || []);
+    } catch (error: any) {
+      console.error("Error loading income categories:", error);
+      setIncomeCategories([]);
+    }
+  };
+
+  const getCategoryName = (income: AvailableIncome): string => {
+    if (typeof income.type === 'object' && income.type !== null) {
+      return income.type.name;
+    } else if (typeof income.type === 'string') {
+      const category = incomeCategories.find(c =>
+        (c._id === income.type) || (c.id === income.type)
+      );
+      return category?.name || "Другое";
+    }
+    return "Другое";
+  };
+
+  const loadProperties = async () => {
     try {
       const response = await apiService.getRentProperties();
       const properties = response.data || [];
-      
+
       // Автоматически обновляем статус для объектов с истекшей датой окончания
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
+
       const updatedProperties = properties.map((property: RentProperty) => {
         if (property.endDate && property.status === 'active') {
           const endDate = new Date(property.endDate);
           endDate.setHours(0, 0, 0, 0);
-          
+
           if (endDate < today) {
             return { ...property, status: 'completed' as const };
           }
         }
         return property;
       });
-      
+
       setProperties(updatedProperties);
     } catch (error: any) {
       console.error("Error loading properties:", error);
@@ -1184,22 +1221,11 @@ const loadProperties = async () => {
                             Доходы
                           </div>
                           {availableIncomes.map(income => {
-                            const typeLabels: Record<string, string> = {
-                              salary: "Зарплата",
-                              bonus: "Бонус",
-                              freelance: "Фриланс",
-                              business: "Бизнес",
-                              investment: "Инвестиции",
-                              rental: "Аренда",
-                              gift: "Подарок",
-                              other: "Другое"
-                            };
-
-                            const typeLabel = typeLabels[income.type] || income.type;
+                            const categoryName = getCategoryName(income);
 
                             return (
                               <SelectItem key={getItemId(income)} value={getItemId(income)}>
-                                {income.source} ({typeLabel}) - Доступно: {income.availableAmount.toLocaleString("ru-RU")} ₸
+                                {income.source} ({categoryName}) - Доступно: {income.availableAmount.toLocaleString("kk-KZ")} ₸ (из {income.amount.toLocaleString("kk-KZ")} ₸) - {new Date(income.date).toLocaleDateString("ru-RU")}
                               </SelectItem>
                             );
                           })}
