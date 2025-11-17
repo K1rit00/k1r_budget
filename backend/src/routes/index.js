@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 
 const authRoutes = require('./auth');
-const expenseRoutes = require('./expenses');
 const incomeRoutes = require('./income');
 const recurringIncomeRoutes = require('./recurringIncome');
 const categoryRoutes = require('./categories');
@@ -11,20 +10,21 @@ const rentRoutes = require('./rent');
 const banksRoutes = require('./banks');
 const utilityTypesRoutes = require('./utilityTypes');
 const creditRoutes = require('./credit');
+const monthlyExpenseRoutes = require('./monthlyExpenses');
 
 // Credit routes
 router.use('/credits', creditRoutes);
 
 // Mount routes
 router.use('/auth', authRoutes);
-router.use('/expenses', expenseRoutes);
 router.use('/income', incomeRoutes);
 router.use('/recurring-income', recurringIncomeRoutes);
 router.use('/categories', categoryRoutes);
 router.use('/rent', rentRoutes);
 router.use('/deposits', depositRoutes);
 router.use('/banks', banksRoutes);
-router.use('/utilitytypes', utilityTypesRoutes);
+router.use('/utility-types', utilityTypesRoutes);
+router.use('/monthly-expenses', monthlyExpenseRoutes);
 
 // API info
 router.get('/', (req, res) => {
@@ -34,7 +34,6 @@ router.get('/', (req, res) => {
     version: '1.0.0',
     endpoints: {
       auth: '/auth',
-      expenses: '/expenses',
       income: '/income',
       recurringIncome: '/recurring-income',
       categories: '/categories',
@@ -42,7 +41,8 @@ router.get('/', (req, res) => {
       deposits: '/deposits',
       banks: '/banks',
       credits: '/credits',
-      utilityTypes: '/utility-types'
+      utilityTypes: '/utility-types',
+      monthlyExpenses: '/monthly-expenses'
     }
   });
 });

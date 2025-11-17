@@ -701,7 +701,7 @@ exports.validateUtilityType = (req, res, next) => {
 
 // Валидация MonthlyExpense (ежемесячные расходы)
 exports.validateMonthlyExpense = (req, res, next) => {
-  const { name, amount, category } = req.body;
+  const { name, amount, category, dueDate } = req.body;
   const errors = [];
 
   // Проверка названия
@@ -712,18 +712,55 @@ exports.validateMonthlyExpense = (req, res, next) => {
   }
 
   // Проверка суммы
-  if (!amount) {
+  if (!amount && amount !== 0) {
     errors.push('Сумма обязательна');
   } else {
     const amountNum = parseFloat(amount);
     if (isNaN(amountNum) || amountNum <= 0) {
       errors.push('Сумма должна быть положительным числом');
     }
+    if (amountNum > 999999999999) {
+      errors.push('Сумма слишком большая');
+    }
   }
 
-  // Проверка категории
+  // Проверка категории (должна быть ObjectId)
   if (!category || category.trim() === '') {
     errors.push('Категория обязательна');
+  } else if (!/^[0-9a-fA-F]{24}$/.test(category)) {
+    errors.push('Некорректный ID категории');
+  }
+
+  // Проверка даты
+  if (!dueDate) {
+    errors.push('Дата обязательна');
+  } else {
+    const date = new Date(dueDate);
+    if (isNaN(date.getTime())) {
+      errors.push('Некорректная дата');
+    }
+  }
+
+  // Проверка actualAmount (если есть)
+  if (req.body.actualAmount !== undefined && req.body.actualAmount !== null) {
+    const actualAmount = parseFloat(req.body.actualAmount);
+    if (isNaN(actualAmount) || actualAmount < 0) {
+      errors.push('Фактическая сумма не может быть отрицательной');
+    }
+    if (actualAmount > 999999999999) {
+      errors.push('Фактическая сумма слишком большая');
+    }
+  }
+
+  // Проверка статуса
+  const validStatuses = ['planned', 'paid', 'overdue'];
+  if (req.body.status && !validStatuses.includes(req.body.status)) {
+    errors.push('Недопустимый статус расхода');
+  }
+
+  // Проверка описания
+  if (req.body.description && req.body.description.length > 500) {
+    errors.push('Описание не может быть длиннее 500 символов');
   }
 
   if (errors.length > 0) {
@@ -736,7 +773,6 @@ exports.validateMonthlyExpense = (req, res, next) => {
 
   next();
 };
-
 // Валидация Rent (аренда)
 exports.validateRent = (req, res, next) => {
   const { address, monthlyRent } = req.body;

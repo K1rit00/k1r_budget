@@ -14,30 +14,95 @@ import { Progress } from "./ui/progress";
 import { Separator } from "./ui/separator";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 import { useAppActions } from "../contexts/AppContext";
-import { useLocalStorage } from "../hooks/useLocalStorage";
-import type { MonthlyExpense, MonthlyBudget, ExpenseCategory } from "../types";
-
-// Моковые данные категорий расходов
-const DEFAULT_EXPENSE_CATEGORIES: ExpenseCategory[] = [
-  { id: "1", name: "Питание", color: "#ef4444", description: "Продукты и еда", isDefault: true },
-  { id: "2", name: "Транспорт", color: "#3b82f6", description: "Проезд и топливо", isDefault: true },
-  { id: "3", name: "Развлечения", color: "#8b5cf6", description: "Отдых и досуг", isDefault: true },
-  { id: "4", name: "Здоровье", color: "#10b981", description: "Медицина и спорт", isDefault: true },
-  { id: "5", name: "Покупки", color: "#f59e0b", description: "Одежда и прочее", isDefault: true },
-  { id: "6", name: "Образование", color: "#06b6d4", description: "Обучение и книги", isDefault: true },
-  { id: "7", name: "Прочее", color: "#6b7280", description: "Другие расходы", isDefault: true }
-];
+import { apiService } from "../services/api";
+import type { MonthlyExpense, MonthlyBudget, Category } from "../types";
 
 function MonthlyExpenses() {
   const { addNotification } = useAppActions();
-  const [budgets, setBudgets] = useLocalStorage<MonthlyBudget[]>("monthly-budgets", []);
-  const [categories] = useLocalStorage<ExpenseCategory[]>("expense-categories", DEFAULT_EXPENSE_CATEGORIES);
-  
+  const [budgets, setBudgets] = useState<MonthlyBudget[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
+
   const [isExpenseDialogOpen, setIsExpenseDialogOpen] = useState(false);
   const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<MonthlyExpense | null>(null);
   const [selectedBudgetId, setSelectedBudgetId] = useState<string>("");
   const [selectedMonthYear, setSelectedMonthYear] = useState<string>("");
+
+  // Загрузка данных при монтировании
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      // Загружаем категории расходов
+      const categoriesRes = await apiService.getCategories('expense');
+      if (categoriesRes.success) {
+        setCategories(categoriesRes.data);
+      }
+
+      // Загружаем ежемесячные расходы
+      const expensesRes = await apiService.getMonthlyExpenses();
+      if (expensesRes.success) {
+        // Группируем расходы по месяцам
+        const groupedBudgets = groupExpensesByMonth(expensesRes.data);
+        setBudgets(groupedBudgets);
+      }
+    } catch (error: any) {
+      console.error('Error loading data:', error);
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка загрузки данных',
+        type: 'error'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Группировка расходов по месяцам
+  const groupExpensesByMonth = (expenses: any[]): MonthlyBudget[] => {
+    const grouped: { [key: string]: MonthlyBudget } = {};
+
+    expenses.forEach(expense => {
+      const date = new Date(expense.dueDate);
+      const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+
+      if (!grouped[monthKey]) {
+        const [year, month] = monthKey.split('-');
+        grouped[monthKey] = {
+          id: monthKey,
+          month: month,
+          year: parseInt(year),
+          totalPlanned: 0,
+          totalActual: 0,
+          expenses: []
+        };
+      }
+
+      const mappedExpense: MonthlyExpense = {
+        id: expense._id || expense.id,
+        categoryId: expense.category,
+        name: expense.name,
+        plannedAmount: parseFloat(expense.amount),
+        actualAmount: expense.actualAmount ? parseFloat(expense.actualAmount) : undefined,
+        dueDate: expense.dueDate,
+        isRecurring: expense.isRecurring || false,
+        status: expense.status || 'planned',
+        description: expense.description
+      };
+
+      grouped[monthKey].expenses.push(mappedExpense);
+      grouped[monthKey].totalPlanned += mappedExpense.plannedAmount;
+      grouped[monthKey].totalActual += mappedExpense.actualAmount || 0;
+    });
+
+    return Object.values(grouped).sort((a, b) => {
+      return new Date(`${b.year}-${b.month}`).getTime() - new Date(`${a.year}-${a.month}`).getTime();
+    });
+  };
 
   // Получаем текущий бюджет
   const getCurrentBudget = () => {
@@ -60,7 +125,7 @@ function MonthlyExpenses() {
   const getOverdueExpensesCount = () => {
     const currentBudget = getCurrentBudget();
     if (!currentBudget) return 0;
-    
+
     const today = new Date();
     return currentBudget.expenses.filter(expense => {
       const dueDate = new Date(expense.dueDate);
@@ -75,7 +140,7 @@ function MonthlyExpenses() {
       planned: budget.totalPlanned,
       actual: budget.totalActual,
       difference: budget.totalActual - budget.totalPlanned
-    })).slice(-6); // Последние 6 месяцев
+    })).slice(-6);
   };
 
   const getExpensesByCategory = () => {
@@ -86,7 +151,7 @@ function MonthlyExpenses() {
       const category = categories.find(cat => cat.id === expense.categoryId);
       const categoryName = category?.name || "Неизвестно";
       const categoryColor = category?.color || "#6b7280";
-      
+
       if (!acc[categoryName]) {
         acc[categoryName] = { name: categoryName, value: 0, color: categoryColor };
       }
@@ -97,116 +162,121 @@ function MonthlyExpenses() {
     return Object.values(categoryTotals);
   };
 
-  // Обработчики форм
-  const handleBudgetSubmit = (formData: FormData) => {
+  // Обработчик создания бюджета
+  const handleBudgetSubmit = async (formData: FormData) => {
     const monthYear = formData.get("monthYear") as string;
-    const [year, month] = monthYear.split("-");
-    
-    const budgetData = {
-      id: Date.now().toString(),
-      month: month,
-      year: parseInt(year),
-      totalPlanned: 0,
-      totalActual: 0,
-      expenses: []
-    };
 
-    setBudgets(prev => [...prev, budgetData]);
-    addNotification({ message: "Бюджет на месяц создан", type: "success" });
-
+    // Просто перезагружаем данные - бюджет создастся автоматически при добавлении первого расхода
     setIsBudgetDialogOpen(false);
+    setSelectedMonthYear(monthYear);
+    addNotification({ message: "Готово! Теперь добавьте расходы для этого месяца", type: "success" });
   };
 
-  const handleExpenseSubmit = (formData: FormData) => {
-    const expenseData = {
-      id: editingExpense?.id || Date.now().toString(),
-      categoryId: formData.get("categoryId") as string,
-      name: formData.get("name") as string,
-      plannedAmount: parseFloat(formData.get("plannedAmount") as string),
-      actualAmount: editingExpense?.actualAmount,
-      dueDate: formData.get("dueDate") as string,
-      isRecurring: formData.get("isRecurring") === "on",
-      status: editingExpense?.status || "planned" as const,
-      description: formData.get("description") as string || undefined
-    };
+  // Обработчик добавления/редактирования расхода
+  const handleExpenseSubmit = async (formData: FormData) => {
+    try {
+      const expenseData = {
+        category: formData.get("categoryId") as string,
+        name: formData.get("name") as string,
+        amount: parseFloat(formData.get("plannedAmount") as string),
+        dueDate: formData.get("dueDate") as string,
+        isRecurring: formData.get("isRecurring") === "on",
+        status: editingExpense?.status || "planned",
+        description: formData.get("description") as string || undefined,
+        actualAmount: editingExpense?.actualAmount
+      };
 
-    // Обновляем бюджет
-    setBudgets(prev => prev.map(budget => {
-      if (budget.id === selectedBudgetId) {
-        const updatedExpenses = editingExpense 
-          ? budget.expenses.map(expense => expense.id === editingExpense.id ? expenseData : expense)
-          : [...budget.expenses, expenseData];
-        
-        const totalPlanned = updatedExpenses.reduce((sum, exp) => sum + exp.plannedAmount, 0);
-        const totalActual = updatedExpenses.reduce((sum, exp) => sum + (exp.actualAmount || 0), 0);
-        
-        return {
-          ...budget,
-          expenses: updatedExpenses,
-          totalPlanned,
-          totalActual
-        };
+      if (editingExpense) {
+        // Обновление
+        await apiService.updateMonthlyExpense(editingExpense.id, expenseData);
+        addNotification({ message: "Расход обновлен", type: "success" });
+      } else {
+        // Создание
+        await apiService.createMonthlyExpense(expenseData);
+        addNotification({ message: "Расход добавлен", type: "success" });
       }
-      return budget;
-    }));
 
-    addNotification({ 
-      message: editingExpense ? "Расход обновлен" : "Расход добавлен", 
-      type: "success" 
-    });
+      // Перезагружаем данные
+      await loadData();
 
-    setIsExpenseDialogOpen(false);
-    setEditingExpense(null);
-    setSelectedBudgetId("");
+      setIsExpenseDialogOpen(false);
+      setEditingExpense(null);
+      setSelectedBudgetId("");
+    } catch (error: any) {
+      console.error('Error saving expense:', error);
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка сохранения расхода',
+        type: 'error'
+      });
+    }
   };
 
-  const markExpenseAsPaid = (budgetId: string, expenseId: string, amount: number) => {
-    setBudgets(prev => prev.map(budget => {
-      if (budget.id === budgetId) {
-        const updatedExpenses = budget.expenses.map(expense => 
-          expense.id === expenseId 
-            ? { ...expense, actualAmount: amount, status: "paid" as const }
-            : expense
-        );
-        
-        const totalActual = updatedExpenses.reduce((sum, exp) => sum + (exp.actualAmount || 0), 0);
-        
-        return {
-          ...budget,
-          expenses: updatedExpenses,
-          totalActual
-        };
-      }
-      return budget;
-    }));
+  // Отметить расход как оплаченный
+  const markExpenseAsPaid = async (budgetId: string, expenseId: string, amount: number) => {
+    try {
+      await apiService.updateMonthlyExpense(expenseId, {
+        actualAmount: amount,
+        status: "paid"
+      });
 
-    addNotification({ message: "Расход отмечен как оплаченный", type: "success" });
+      addNotification({ message: "Расход отмечен как оплаченный", type: "success" });
+      await loadData();
+    } catch (error: any) {
+      console.error('Error marking expense as paid:', error);
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка обновления расхода',
+        type: 'error'
+      });
+    }
   };
 
-  const deleteExpense = (budgetId: string, expenseId: string) => {
-    setBudgets(prev => prev.map(budget => {
-      if (budget.id === budgetId) {
-        const updatedExpenses = budget.expenses.filter(expense => expense.id !== expenseId);
-        const totalPlanned = updatedExpenses.reduce((sum, exp) => sum + exp.plannedAmount, 0);
-        const totalActual = updatedExpenses.reduce((sum, exp) => sum + (exp.actualAmount || 0), 0);
-        
-        return {
-          ...budget,
-          expenses: updatedExpenses,
-          totalPlanned,
-          totalActual
-        };
-      }
-      return budget;
-    }));
-
-    addNotification({ message: "Расход удален", type: "info" });
+  // Удаление расхода
+  const deleteExpense = async (budgetId: string, expenseId: string) => {
+    try {
+      await apiService.deleteMonthlyExpense(expenseId);
+      addNotification({ message: "Расход удален", type: "info" });
+      await loadData();
+    } catch (error: any) {
+      console.error('Error deleting expense:', error);
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка удаления расхода',
+        type: 'error'
+      });
+    }
   };
 
-  const deleteBudget = (budgetId: string) => {
-    setBudgets(prev => prev.filter(budget => budget.id !== budgetId));
-    addNotification({ message: "Бюджет удален", type: "info" });
+  // Удаление бюджета (всех расходов за месяц)
+  const deleteBudget = async (budgetId: string) => {
+    try {
+      const budget = budgets.find(b => b.id === budgetId);
+      if (!budget) return;
+
+      // Удаляем все расходы этого бюджета
+      await Promise.all(
+        budget.expenses.map(expense => apiService.deleteMonthlyExpense(expense.id))
+      );
+
+      addNotification({ message: "Бюджет удален", type: "info" });
+      await loadData();
+    } catch (error: any) {
+      console.error('Error deleting budget:', error);
+      addNotification({
+        message: error.response?.data?.message || 'Ошибка удаления бюджета',
+        type: 'error'
+      });
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Загрузка данных...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -266,29 +336,30 @@ function MonthlyExpenses() {
             <CardContent>
               {(() => {
                 const currentBudget = getCurrentBudget();
-                
+
                 if (!currentBudget) {
                   return (
                     <div className="text-center py-8">
                       <Wallet className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                       <p className="text-muted-foreground">Бюджет на текущий месяц не создан</p>
-                      <Button 
+                      <Button
                         className="mt-4"
                         onClick={() => {
                           const now = new Date();
                           const monthYear = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
                           setSelectedMonthYear(monthYear);
-                          setIsBudgetDialogOpen(true);
+                          setSelectedBudgetId(monthYear);
+                          setIsExpenseDialogOpen(true);
                         }}
                       >
-                        Создать бюджет
+                        Добавить первый расход
                       </Button>
                     </div>
                   );
                 }
 
-                const budgetProgress = currentBudget.totalPlanned > 0 
-                  ? (currentBudget.totalActual / currentBudget.totalPlanned) * 100 
+                const budgetProgress = currentBudget.totalPlanned > 0
+                  ? (currentBudget.totalActual / currentBudget.totalPlanned) * 100
                   : 0;
 
                 return (
@@ -301,9 +372,9 @@ function MonthlyExpenses() {
                           {budgetProgress.toFixed(1)}%
                         </span>
                       </div>
-                      <Progress 
-                        value={Math.min(budgetProgress, 100)} 
-                        className="h-3 mb-2" 
+                      <Progress
+                        value={Math.min(budgetProgress, 100)}
+                        className="h-3 mb-2"
                       />
                       <div className="flex justify-between text-sm text-muted-foreground">
                         <span>Потрачено: {currentBudget.totalActual.toLocaleString("kk-KZ")} ₸</span>
@@ -339,22 +410,22 @@ function MonthlyExpenses() {
                         currentBudget.expenses.map(expense => {
                           const category = categories.find(cat => cat.id === expense.categoryId);
                           const isOverdue = new Date(expense.dueDate) < new Date() && expense.status === "planned";
-                          
+
                           return (
                             <div key={expense.id} className="p-4 border rounded-lg">
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
-                                  <div 
-                                    className="w-3 h-3 rounded-full" 
+                                  <div
+                                    className="w-3 h-3 rounded-full"
                                     style={{ backgroundColor: category?.color }}
                                   />
                                   <h4>{expense.name}</h4>
                                   <Badge variant={
-                                    expense.status === "paid" ? "default" : 
-                                    isOverdue ? "destructive" : "secondary"
+                                    expense.status === "paid" ? "default" :
+                                      isOverdue ? "destructive" : "secondary"
                                   }>
-                                    {expense.status === "paid" ? "Оплачено" : 
-                                     isOverdue ? "Просрочено" : "Запланировано"}
+                                    {expense.status === "paid" ? "Оплачено" :
+                                      isOverdue ? "Просрочено" : "Запланировано"}
                                   </Badge>
                                   {expense.isRecurring && (
                                     <Badge variant="outline">Регулярно</Badge>
@@ -366,8 +437,8 @@ function MonthlyExpenses() {
                                       {category?.name} • {new Date(expense.dueDate).toLocaleDateString("ru-RU")}
                                     </p>
                                     <p className="text-lg">
-                                      {expense.actualAmount 
-                                        ? `${expense.actualAmount.toLocaleString("kk-KZ")} ₸` 
+                                      {expense.actualAmount
+                                        ? `${expense.actualAmount.toLocaleString("kk-KZ")} ₸`
                                         : `${expense.plannedAmount.toLocaleString("kk-KZ")} ₸`
                                       }
                                     </p>
@@ -392,12 +463,12 @@ function MonthlyExpenses() {
                                           <div className="space-y-4">
                                             <div>
                                               <Label htmlFor="amount">Фактическая сумма (₸)</Label>
-                                              <Input 
-                                                id="amount" 
-                                                name="amount" 
-                                                type="number" 
-                                                step="0.01" 
-                                                required 
+                                              <Input
+                                                id="amount"
+                                                name="amount"
+                                                type="number"
+                                                step="0.01"
+                                                required
                                                 defaultValue={expense.plannedAmount}
                                               />
                                             </div>
@@ -449,64 +520,79 @@ function MonthlyExpenses() {
               <DialogHeader>
                 <DialogTitle>{editingExpense ? "Редактировать расход" : "Добавить расход"}</DialogTitle>
               </DialogHeader>
-              <form onSubmit={(e) => { e.preventDefault(); handleExpenseSubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target as HTMLFormElement);
+                // Добавляем categoryId в FormData вручную
+                if (selectedCategory) {
+                  formData.set("categoryId", selectedCategory);
+                }
+                handleExpenseSubmit(formData);
+              }} className="space-y-4">
                 <div>
                   <Label htmlFor="categoryId">Категория</Label>
-                  <Select name="categoryId" defaultValue={editingExpense?.categoryId}>
+                  <Select
+                    value={selectedCategory}
+                    onValueChange={(value) => setSelectedCategory(value)}
+                    required
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Выберите категорию" />
                     </SelectTrigger>
                     <SelectContent>
                       {categories.map(category => (
-                        <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  <input type="hidden" name="categoryId" value={selectedCategory} />
                 </div>
                 <div>
                   <Label htmlFor="name">Название расхода</Label>
-                  <Input 
-                    id="name" 
-                    name="name" 
-                    required 
+                  <Input
+                    id="name"
+                    name="name"
+                    required
                     defaultValue={editingExpense?.name}
                     placeholder="Например: Продукты на неделю"
                   />
                 </div>
                 <div>
                   <Label htmlFor="plannedAmount">Запланированная сумма (₸)</Label>
-                  <Input 
-                    id="plannedAmount" 
-                    name="plannedAmount" 
-                    type="number" 
-                    step="0.01" 
-                    required 
+                  <Input
+                    id="plannedAmount"
+                    name="plannedAmount"
+                    type="number"
+                    step="0.01"
+                    required
                     defaultValue={editingExpense?.plannedAmount}
                   />
                 </div>
                 <div>
                   <Label htmlFor="dueDate">Срок оплаты</Label>
-                  <Input 
-                    id="dueDate" 
-                    name="dueDate" 
-                    type="date" 
-                    required 
+                  <Input
+                    id="dueDate"
+                    name="dueDate"
+                    type="date"
+                    required
                     defaultValue={editingExpense?.dueDate}
                   />
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="isRecurring" 
-                    name="isRecurring" 
+                  <Checkbox
+                    id="isRecurring"
+                    name="isRecurring"
                     defaultChecked={editingExpense?.isRecurring}
                   />
                   <Label htmlFor="isRecurring">Регулярный расход</Label>
                 </div>
                 <div>
                   <Label htmlFor="description">Описание</Label>
-                  <Textarea 
-                    id="description" 
-                    name="description" 
+                  <Textarea
+                    id="description"
+                    name="description"
                     defaultValue={editingExpense?.description}
                     placeholder="Дополнительная информация"
                   />
@@ -515,13 +601,14 @@ function MonthlyExpenses() {
                   <Button type="submit" className="flex-1">
                     {editingExpense ? "Обновить" : "Добавить"}
                   </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => {
                       setIsExpenseDialogOpen(false);
                       setEditingExpense(null);
                       setSelectedBudgetId("");
+                      setSelectedCategory("");
                     }}
                   >
                     Отмена
@@ -536,46 +623,6 @@ function MonthlyExpenses() {
           <Card className="rounded-2xl">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Все бюджеты</CardTitle>
-              <Dialog open={isBudgetDialogOpen} onOpenChange={setIsBudgetDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Создать бюджет
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-sm">
-                  <DialogHeader>
-                    <DialogTitle>Создать бюджет на месяц</DialogTitle>
-                  </DialogHeader>
-                  <form onSubmit={(e) => { e.preventDefault(); handleBudgetSubmit(new FormData(e.target as HTMLFormElement)); }} className="space-y-4">
-                    <div>
-                      <Label htmlFor="monthYear">Месяц и год</Label>
-                      <Input 
-                        id="monthYear" 
-                        name="monthYear" 
-                        type="month" 
-                        required 
-                        defaultValue={selectedMonthYear}
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="submit" className="flex-1">
-                        Создать
-                      </Button>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        onClick={() => {
-                          setIsBudgetDialogOpen(false);
-                          setSelectedMonthYear("");
-                        }}
-                      >
-                        Отмена
-                      </Button>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -584,52 +631,50 @@ function MonthlyExpenses() {
                     Пока нет созданных бюджетов. Создайте первый бюджет для планирования расходов.
                   </p>
                 ) : (
-                  budgets
-                    .sort((a, b) => new Date(`${b.year}-${b.month}`).getTime() - new Date(`${a.year}-${a.month}`).getTime())
-                    .map(budget => {
-                      const budgetProgress = budget.totalPlanned > 0 
-                        ? (budget.totalActual / budget.totalPlanned) * 100 
-                        : 0;
+                  budgets.map(budget => {
+                    const budgetProgress = budget.totalPlanned > 0
+                      ? (budget.totalActual / budget.totalPlanned) * 100
+                      : 0;
 
-                      return (
-                        <div key={budget.id} className="p-4 border rounded-lg">
-                          <div className="flex items-center justify-between mb-3">
-                            <div>
-                              <h4>{budget.month}/{budget.year}</h4>
-                              <p className="text-sm text-muted-foreground">
-                                {budget.expenses.length} расходов
+                    return (
+                      <div key={budget.id} className="p-4 border rounded-lg">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <h4>{budget.month}/{budget.year}</h4>
+                            <p className="text-sm text-muted-foreground">
+                              {budget.expenses.length} расходов
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <p className="text-sm text-muted-foreground">Исполнение</p>
+                              <p className={`${budgetProgress > 100 ? 'text-red-600' : 'text-green-600'}`}>
+                                {budgetProgress.toFixed(1)}%
                               </p>
                             </div>
-                            <div className="flex items-center gap-4">
-                              <div className="text-right">
-                                <p className="text-sm text-muted-foreground">Исполнение</p>
-                                <p className={`${budgetProgress > 100 ? 'text-red-600' : 'text-green-600'}`}>
-                                  {budgetProgress.toFixed(1)}%
-                                </p>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => deleteBudget(budget.id)}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteBudget(budget.id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
                           </div>
-                          <div className="grid grid-cols-2 gap-4 mb-2">
-                            <div>
-                              <p className="text-sm text-muted-foreground">Запланировано</p>
-                              <p className="text-lg">{budget.totalPlanned.toLocaleString("kk-KZ")} ₸</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Потрачено</p>
-                              <p className="text-lg">{budget.totalActual.toLocaleString("kk-KZ")} ₸</p>
-                            </div>
-                          </div>
-                          <Progress value={Math.min(budgetProgress, 100)} className="h-2" />
                         </div>
-                      );
-                    })
+                        <div className="grid grid-cols-2 gap-4 mb-2">
+                          <div>
+                            <p className="text-sm text-muted-foreground">Запланировано</p>
+                            <p className="text-lg">{budget.totalPlanned.toLocaleString("kk-KZ")} ₸</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Потрачено</p>
+                            <p className="text-lg">{budget.totalActual.toLocaleString("kk-KZ")} ₸</p>
+                          </div>
+                        </div>
+                        <Progress value={Math.min(budgetProgress, 100)} className="h-2" />
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </CardContent>
@@ -643,7 +688,7 @@ function MonthlyExpenses() {
             </CardHeader>
             <CardContent>
               <p className="text-muted-foreground text-center py-8">
-                Функционал планирования бюджета в разработке. 
+                Функционал планирования бюджета в разработке.
                 Здесь будут инструменты для создания бюджетных планов на основе истории трат.
               </p>
             </CardContent>
