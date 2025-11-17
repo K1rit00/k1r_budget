@@ -1261,10 +1261,9 @@ function Credits() {
                       </div>
                       {availableIncomes.map(income => {
                         const categoryName = getCategoryName(income);
-                        const incomeId = income._id || income.id;
 
                         return (
-                          <SelectItem key={incomeId} value={incomeId}>
+                          <SelectItem key={getItemId(income)} value={getItemId(income)}>
                             {income.source} ({categoryName}) - Доступно: {income.availableAmount.toLocaleString("kk-KZ")} ₸ (из {income.amount.toLocaleString("kk-KZ")} ₸) - {new Date(income.date).toLocaleDateString("ru-RU")}
                           </SelectItem>
                         );

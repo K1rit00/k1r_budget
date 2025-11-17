@@ -4,8 +4,6 @@ const User = require('../models/User');
 
 // Время запуска сервера
 const SERVER_START_TIME = new Date();
-console.log('--- НОВЫЙ ЗАПУСК БЭКЕНД СЕРВЕРА ---');
-console.log('SERVER_START_TIME установлен на:', SERVER_START_TIME);
 
 const protect = async (req, res, next) => {
   try {

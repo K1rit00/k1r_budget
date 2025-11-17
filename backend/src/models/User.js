@@ -110,27 +110,18 @@ userSchema.methods.isSessionValid = function(serverStartTime) {
   const ONE_HOUR = 60 * 60 * 1000; // 1 час в миллисекундах
   const now = Date.now();
 
-  console.log('--- Проверка isSessionValid ---');
-  console.log('User lastLogin:', this.lastLogin);
-  console.log('Server startTime:', serverStartTime);
-
   // Проверка 1: Сервер был перезапущен
   if (!this.lastLogin) {
-    console.log('РЕЗУЛЬТАТ: false (нет lastLogin)');
     return false;
   }
   if (this.lastLogin < serverStartTime) {
-    console.log('РЕЗУЛЬТАТ: false (lastLogin < serverStartTime)');
     return false;
   }
   
   // Проверка 2: Последняя активность была более 1 часа назад
   if (this.lastActivity && (now - this.lastActivity.getTime()) > ONE_HOUR) {
-    console.log('РЕЗУЛЬТАТ: false (неактивность > 1 часа)');
     return false;
   }
-  
-  console.log('РЕЗУЛЬТАТ: true (сессия валидна)');
   return true;
 };
 
