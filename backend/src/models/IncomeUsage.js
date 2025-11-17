@@ -34,7 +34,6 @@ const incomeUsageSchema = new mongoose.Schema(
     depositTransactionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'DepositTransaction',
-      index: true
     },
     // Дополнительная информация
     description: {

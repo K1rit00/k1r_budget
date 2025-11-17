@@ -5,8 +5,8 @@ const logger = require('../utils/logger');
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(config.mongoUri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+      // Удалите: useNewUrlParser: true,
+      // Удалите: useUnifiedTopology: true,
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
     });
