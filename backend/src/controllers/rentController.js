@@ -1,5 +1,6 @@
 const RentProperty = require('../models/Rent');
 const RentPayment = require('../models/RentPayment');
+const IncomeUsage = require('../models/IncomeUsage'); // <--- ДОБАВЛЕНО: Импорт модели IncomeUsage
 const asyncHandler = require('../middleware/asyncHandler');
 
 // @desc    Get all rent properties
@@ -225,7 +226,25 @@ exports.createPayment = asyncHandler(async (req, res) => {
     });
   }
   
-  const payment = await RentPayment.create(req.body);
+  // Создаем платеж аренды
+  const payment = await RentPayment.create(req.body); // <--- Оставлено без изменений
+  
+  // >>> ИСПРАВЛЕНИЕ: Логика для сохранения использования дохода <<<
+  if (req.body.incomeId) {
+    try {
+      await IncomeUsage.create({
+        userId: req.user.id,
+        incomeId: req.body.incomeId,
+        usedAmount: req.body.amount,
+        usageType: 'other', // Используем 'other', так как это не пополнение депозита
+        description: `Оплата аренды: ${property.address} (${req.body.paymentType === 'rent' ? 'Аренда' : 'Коммунальные'})`,
+        usageDate: req.body.paymentDate || Date.now()
+      });
+    } catch (err) {
+      // Логируем ошибку, но не прерываем основной запрос создания платежа
+      console.error('Ошибка при создании записи использования дохода:', err);
+    }
+  } // <--- КОНЕЦ ИСПРАВЛЕНИЯ
   
   res.status(201).json({
     success: true,

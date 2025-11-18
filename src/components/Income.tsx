@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
-import { TrendingUp, Plus, DollarSign, Briefcase, Edit, Trash2, Calendar, BarChart3, Loader2, RefreshCw, AlertCircle, Power, PowerOff, History, Play } from "lucide-react";
+import { 
+  TrendingUp, Plus, DollarSign, Briefcase, Edit, Trash2, Calendar, 
+  BarChart3, Loader2, RefreshCw, AlertCircle, Power, PowerOff, 
+  History, Play, ArrowRight, Wallet, PiggyBank 
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
@@ -15,7 +19,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieCha
 import { useAppActions } from "../contexts/AppContext";
 import { apiService } from "../services/api";
 
-// Типы для доходов из API
+// --- Интерфейсы ---
+
 interface ApiIncome {
   _id: string;
   userId: string;
@@ -23,7 +28,7 @@ interface ApiIncome {
   amount: string;
   description?: string;
   date: string;
-  type: any; // ИЗМЕНЕНО: было 'salary' | 'bonus' | ...
+  type: any;
   isAutoCreated?: boolean;
   recurringIncomeId?: string;
   createdAt: string;
@@ -36,12 +41,11 @@ interface Income {
   amount: number;
   description?: string;
   date: string;
-  type: IncomeCategory; // ИЗМЕНЕНО: было string
+  type: IncomeCategory;
   isAutoCreated?: boolean;
   recurringIncomeId?: string;
 }
 
-// Типы для регулярных доходов
 interface ApiRecurringIncome {
   _id: string;
   userId: string;
@@ -77,7 +81,6 @@ interface RecurringIncome {
   createdCount: number;
 }
 
-// Тип для категории дохода
 interface IncomeCategory {
   id: string;
   name: string;
@@ -85,11 +88,29 @@ interface IncomeCategory {
   color: string;
 }
 
+// Новый интерфейс для транзакции использования
+interface IncomeUsageTransaction {
+  id: string;
+  incomeId: {
+    _id: string;
+    source: string;
+  };
+  usedAmount: number;
+  usageType: 'deposit' | 'other';
+  depositTransactionId?: string; // ID транзакции депозита
+  description?: string;
+  usageDate: string;
+}
+
 function Income() {
   const { addNotification } = useAppActions();
+  
+  // State
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [recurringIncomes, setRecurringIncomes] = useState<RecurringIncome[]>([]);
   const [incomeCategories, setIncomeCategories] = useState<IncomeCategory[]>([]);
+  const [usageHistory, setUsageHistory] = useState<IncomeUsageTransaction[]>([]); // State для истории
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -99,7 +120,7 @@ function Income() {
   const [editingIncome, setEditingIncome] = useState<Income | null>(null);
   const [editingRecurring, setEditingRecurring] = useState<RecurringIncome | null>(null);
 
-  // Загрузка данных при монтировании
+  // Загрузка данных
   useEffect(() => {
     loadData();
   }, []);
@@ -107,9 +128,13 @@ function Income() {
   const loadData = async () => {
     try {
       setIsLoading(true);
-      await Promise.all([loadIncomes(), loadRecurringIncomes(), loadIncomeCategories()]);
+      await Promise.all([
+        loadIncomes(), 
+        loadRecurringIncomes(), 
+        loadIncomeCategories(),
+        loadUsageHistory() // Загружаем историю
+      ]);
 
-      // Автоматическая обработка после загрузки
       await autoProcessRecurringIncomes();
     } catch (error: any) {
       console.error('Load data error:', error);
@@ -125,7 +150,6 @@ function Income() {
   const loadIncomeCategories = async () => {
     try {
       const response = await apiService.getCategories('income');
-
       if (response.success) {
         const mappedCategories = response.data.map((cat: any) => ({
           id: cat._id,
@@ -137,14 +161,12 @@ function Income() {
       }
     } catch (error: any) {
       console.error('Load income categories error:', error);
-      throw error;
     }
   };
 
   const autoProcessRecurringIncomes = async () => {
     try {
       const response = await apiService.processRecurringIncomes();
-
       if (response.success && response.created > 0) {
         addNotification({
           message: `🎉 Автоматически создано доходов: ${response.created}`,
@@ -160,7 +182,6 @@ function Income() {
   const loadIncomes = async () => {
     try {
       const response = await apiService.getIncome();
-
       if (response.success) {
         const mappedIncomes = response.data.map((income: ApiIncome) => ({
           id: income._id,
@@ -168,7 +189,6 @@ function Income() {
           amount: parseFloat(income.amount),
           description: income.description,
           date: income.date,
-          // ИЗМЕНЕНИЕ ЗДЕСЬ:
           type: {
             id: (income.type as any)._id,
             name: (income.type as any).name,
@@ -189,7 +209,6 @@ function Income() {
   const loadRecurringIncomes = async () => {
     try {
       const response = await apiService.getRecurringIncomes();
-
       if (response.success) {
         const mappedRecurring = response.data.map((rec: ApiRecurringIncome) => ({
           id: rec._id,
@@ -211,31 +230,45 @@ function Income() {
     }
   };
 
+  // Загрузка истории использования (Транзакции)
+  const loadUsageHistory = async () => {
+    try {
+      // Используем новый метод API
+      const response = await apiService.getIncomeUsageHistory();
+      if (response.success) {
+        const mappedHistory = response.data.map((item: any) => ({
+          id: item._id,
+          incomeId: item.incomeId, // Предполагаем, что populate вернул объект
+          usedAmount: item.usedAmount,
+          usageType: item.usageType,
+          depositTransactionId: item.depositTransactionId,
+          description: item.description,
+          usageDate: item.usageDate
+        }));
+        setUsageHistory(mappedHistory);
+      }
+    } catch (error: any) {
+      console.error('Load usage history error:', error);
+      // Не выбрасываем ошибку, чтобы не блокировать загрузку остальной страницы
+      // Если эндпоинта пока нет, просто оставим список пустым
+    }
+  };
+
   const handleProcessRecurring = async () => {
     try {
       setIsProcessing(true);
       const response = await apiService.processRecurringIncomes();
-
       if (response.success) {
         if (response.created > 0) {
-          addNotification({
-            message: response.message,
-            type: 'success'
-          });
+          addNotification({ message: response.message, type: 'success' });
           await loadData();
         } else {
-          addNotification({
-            message: 'Нет доходов для автоматического создания',
-            type: 'info'
-          });
+          addNotification({ message: 'Нет доходов для автоматического создания', type: 'info' });
         }
       }
     } catch (error: any) {
       console.error('Process recurring error:', error);
-      addNotification({
-        message: error.response?.data?.message || 'Ошибка обработки регулярных доходов',
-        type: 'error'
-      });
+      addNotification({ message: error.response?.data?.message || 'Ошибка обработки', type: 'error' });
     } finally {
       setIsProcessing(false);
     }
@@ -244,7 +277,6 @@ function Income() {
   const handleIncomeSubmit = async (formData: FormData) => {
     try {
       setIsSubmitting(true);
-
       const incomeData = {
         source: formData.get("source") as string,
         amount: formData.get("amount") as string,
@@ -269,20 +301,14 @@ function Income() {
       }
     } catch (error: any) {
       console.error('Submit income error:', error);
-      addNotification({
-        message: error.response?.data?.message || 'Ошибка сохранения дохода',
-        type: 'error'
-      });
+      addNotification({ message: error.response?.data?.message || 'Ошибка сохранения', type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const deleteIncome = async (id: string) => {
-    if (!confirm('Вы уверены, что хотите удалить этот доход?')) {
-      return;
-    }
-
+    if (!confirm('Вы уверены?')) return;
     try {
       const response = await apiService.deleteIncome(id);
       if (response.success) {
@@ -291,17 +317,13 @@ function Income() {
       }
     } catch (error: any) {
       console.error('Delete income error:', error);
-      addNotification({
-        message: error.response?.data?.message || 'Ошибка удаления дохода',
-        type: 'error'
-      });
+      addNotification({ message: error.response?.data?.message || 'Ошибка удаления', type: 'error' });
     }
   };
 
   const handleRecurringSubmit = async (formData: FormData) => {
     try {
       setIsSubmitting(true);
-
       const recurringData = {
         source: formData.get("source") as string,
         amount: formData.get("amount") as string,
@@ -327,20 +349,14 @@ function Income() {
       }
     } catch (error: any) {
       console.error('Submit recurring error:', error);
-      addNotification({
-        message: error.response?.data?.message || 'Ошибка сохранения шаблона',
-        type: 'error'
-      });
+      addNotification({ message: error.response?.data?.message || 'Ошибка сохранения', type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const deleteRecurring = async (id: string) => {
-    if (!confirm('Вы уверены, что хотите удалить этот шаблон? Созданные доходы сохранятся.')) {
-      return;
-    }
-
+    if (!confirm('Вы уверены?')) return;
     try {
       const response = await apiService.deleteRecurringIncome(id);
       if (response.success) {
@@ -349,10 +365,7 @@ function Income() {
       }
     } catch (error: any) {
       console.error('Delete recurring error:', error);
-      addNotification({
-        message: error.response?.data?.message || 'Ошибка удаления шаблона',
-        type: 'error'
-      });
+      addNotification({ message: error.response?.data?.message || 'Ошибка удаления', type: 'error' });
     }
   };
 
@@ -365,48 +378,30 @@ function Income() {
       }
     } catch (error: any) {
       console.error('Toggle recurring error:', error);
-      addNotification({
-        message: error.response?.data?.message || 'Ошибка изменения статуса',
-        type: 'error'
-      });
+      addNotification({ message: error.response?.data?.message || 'Ошибка статуса', type: 'error' });
     }
   };
 
-  // Получение категории по ID
-  const getCategoryById = (id: string) => {
-    return incomeCategories.find(cat => cat.id === id);
-  };
+  // --- Helpers ---
 
-  // Получение имени категории
-  const getCategoryName = (id: string) => {
-    const category = getCategoryById(id);
-    return category?.name || id;
-  };
+  const getCategoryById = (id: string) => incomeCategories.find(cat => cat.id === id);
+  const getCategoryName = (id: string) => getCategoryById(id)?.name || id;
+  const getCategoryColor = (id: string) => getCategoryById(id)?.color || '#6b7280';
 
-  // Получение цвета категории
-  const getCategoryColor = (id: string) => {
-    const category = getCategoryById(id);
-    return category?.color || '#6b7280';
-  };
-
-  // Расчеты для статистики
   const getCurrentMonthTotal = () => {
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
     return incomes
       .filter(income => {
-        const incomeDate = new Date(income.date);
-        return incomeDate.getMonth() === currentMonth && incomeDate.getFullYear() === currentYear;
+        const d = new Date(income.date);
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       })
       .reduce((sum, income) => sum + income.amount, 0);
   };
 
   const getTotalYearIncome = () => {
-    const currentYear = new Date().getFullYear();
+    const year = new Date().getFullYear();
     return incomes
-      .filter(income => new Date(income.date).getFullYear() === currentYear)
+      .filter(income => new Date(income.date).getFullYear() === year)
       .reduce((sum, income) => sum + income.amount, 0);
   };
 
@@ -416,19 +411,18 @@ function Income() {
       .reduce((sum, rec) => sum + rec.amount, 0);
   };
 
-  // Данные для аналитики
+  // --- Analytics Data ---
+
   const getIncomeByType = () => {
     const typeTotals = incomes.reduce((acc, income) => {
-      const typeName = income.type.name;      // ИЗМЕНЕНО: было getCategoryName(income.type)
-      const typeColor = income.type.color;   // ИЗМЕНЕНО: было getCategoryColor(income.type)
-
+      const typeName = income.type.name;
+      const typeColor = income.type.color;
       if (!acc[typeName]) {
         acc[typeName] = { name: typeName, value: 0, color: typeColor };
       }
       acc[typeName].value += income.amount;
       return acc;
     }, {} as Record<string, { name: string; value: number; color: string }>);
-
     return Object.values(typeTotals);
   };
 
@@ -437,17 +431,13 @@ function Income() {
       const date = new Date(income.date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const monthName = date.toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
-
       if (!acc[monthKey]) {
         acc[monthKey] = { month: monthName, amount: 0, sortKey: monthKey };
       }
       acc[monthKey].amount += income.amount;
       return acc;
     }, {} as Record<string, { month: string; amount: number; sortKey: string }>);
-
-    return Object.values(monthlyData)
-      .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
-      .slice(-12);
+    return Object.values(monthlyData).sort((a, b) => a.sortKey.localeCompare(b.sortKey)).slice(-12);
   };
 
   if (isLoading) {
@@ -504,11 +494,10 @@ function Income() {
 
       {/* Основной контент */}
       <Tabs defaultValue="incomes" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="incomes">Доходы</TabsTrigger>
-          <TabsTrigger value="recurring">
-            Шаблоны ({recurringIncomes.length})
-          </TabsTrigger>
+          <TabsTrigger value="transactions">История операций</TabsTrigger>
+          <TabsTrigger value="recurring">Шаблоны ({recurringIncomes.length})</TabsTrigger>
           <TabsTrigger value="analytics">Аналитика</TabsTrigger>
         </TabsList>
 
@@ -533,7 +522,7 @@ function Income() {
                       <Label htmlFor="type">Тип дохода</Label>
                       <Select
                         name="type"
-                        defaultValue={editingIncome?.type.id || (incomeCategories[0]?.id || "")} // ИЗМЕНЕНО: было editingIncome?.type
+                        defaultValue={editingIncome?.type.id || (incomeCategories[0]?.id || "")}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Выберите категорию" />
@@ -684,6 +673,107 @@ function Income() {
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
+                        </div>
+                      </div>
+                    ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+{/* Вкладка: История операций (Транзакции) */}
+        <TabsContent value="transactions">
+          <Card className="rounded-2xl border shadow-sm">
+            <CardHeader className="pb-4 border-b bg-muted/20">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-lg font-semibold">История распределения</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Движение средств от доходов к накоплениям и целям
+                  </p>
+                </div>
+                <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground bg-background px-3 py-1 rounded-full border">
+                  <History className="w-3.5 h-3.5" />
+                  Всего операций: {usageHistory.length}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y">
+                {usageHistory.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+                    <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+                      <History className="w-8 h-8 text-muted-foreground/50" />
+                    </div>
+                    <h3 className="font-medium text-lg text-foreground">История пуста</h3>
+                    <p className="text-muted-foreground text-sm max-w-xs mt-1">
+                      Здесь появятся записи, когда вы начнете переводить полученные доходы на депозиты.
+                    </p>
+                  </div>
+                ) : (
+                  usageHistory
+                    .sort((a, b) => new Date(b.usageDate).getTime() - new Date(a.usageDate).getTime())
+                    .map((transaction) => (
+                      <div 
+                        key={transaction.id} 
+                        className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-muted/30 transition-all duration-200 group"
+                      >
+                        <div className="flex items-start gap-4">
+                          {/* Иконка */}
+                          <div className={`mt-1 sm:mt-0 w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border shadow-sm ${
+                            transaction.usageType === 'deposit' 
+                              ? 'bg-purple-50 border-purple-100 text-purple-600 dark:bg-purple-900/20 dark:border-purple-800 dark:text-purple-400' 
+                              : 'bg-blue-50 border-blue-100 text-blue-600 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400'
+                          }`}>
+                            {transaction.usageType === 'deposit' ? <PiggyBank className="w-5 h-5" /> : <Wallet className="w-5 h-5" />}
+                          </div>
+
+                          {/* Основная информация */}
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm sm:text-base text-foreground">
+                                {transaction.usageType === 'deposit' ? 'Пополнение депозита' : 'Прочее использование'}
+                              </span>
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 font-normal text-muted-foreground">
+                                {new Date(transaction.usageDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </Badge>
+                            </div>
+                            
+                            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1 truncate max-w-[200px]">
+                                {transaction.incomeId?.source || 'Неизвестный источник'}
+                              </span>
+                              <ArrowRight className="w-3 h-3 text-muted-foreground/60" />
+                              <span className="text-xs px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border">
+                                Источник
+                              </span>
+                            </div>
+                            
+                            {/* Дата для мобильной версии (скрыта на десктопе, если нужно экономить место, но здесь оставим как доп инфо) */}
+                            <p className="text-xs text-muted-foreground/60 sm:hidden">
+                              {new Date(transaction.usageDate).toLocaleDateString("ru-RU", {
+                                day: 'numeric', month: 'long', year: 'numeric'
+                              })}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Правая часть: Сумма и Дата (Десктоп) */}
+                        <div className="mt-3 sm:mt-0 pl-14 sm:pl-0 text-left sm:text-right">
+                          <div className="font-bold text-base sm:text-lg text-blue-600 dark:text-blue-400 tracking-tight">
+                            {Number(transaction.usedAmount).toLocaleString("kk-KZ")} ₸
+                          </div>
+                          <div className="text-xs text-muted-foreground hidden sm:block mt-0.5">
+                             {new Date(transaction.usageDate).toLocaleDateString("ru-RU", {
+                                day: 'numeric', month: 'long', year: 'numeric'
+                             })}
+                          </div>
+                          {transaction.description && (
+                            <p className="text-xs text-muted-foreground/70 italic mt-1 max-w-[200px] sm:ml-auto truncate">
+                              {transaction.description}
+                            </p>
+                          )}
                         </div>
                       </div>
                     ))

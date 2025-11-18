@@ -255,6 +255,12 @@ export const apiService = {
     return response.data;
   },
 
+  getIncomeUsageHistory: async () => {
+    // Предполагаем, что такой маршрут существует для получения истории из IncomeUsage
+    const response = await api.get('/income/usage/history');
+    return response.data;
+  },
+
   // Categories
   getCategories: async (type?: 'expense' | 'income') => {
     const response = await api.get('/categories', { params: { type } });

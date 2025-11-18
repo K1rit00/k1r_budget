@@ -6,7 +6,8 @@ const {
   createIncome,
   updateIncome,
   deleteIncome,
-  getIncomesStats
+  getIncomesStats,
+  getIncomeUsageHistory // <--- 1. Добавьте импорт
 } = require('../controllers/incomeController');
 const { protect } = require('../middleware/auth');
 const { validateIncome } = require('../middleware/validation');
@@ -18,6 +19,9 @@ router.route('/')
   .post(validateIncome, createIncome);
 
 router.get('/stats', getIncomesStats);
+
+// <--- 2. Вставьте этот роут СЮДА (до /:id)
+router.get('/usage/history', getIncomeUsageHistory);
 
 router.route('/:id')
   .get(getIncome)

@@ -1,5 +1,6 @@
 const Income = require('../models/Income');
 const Category = require('../models/Category');
+const IncomeUsage = require('../models/IncomeUsage'); // <--- 1. Добавьте этот импорт
 
 exports.getIncomes = async (req, res) => {
   try {
@@ -14,7 +15,7 @@ exports.getIncomes = async (req, res) => {
     if (type) query.type = type;
 
     const incomes = await Income.find(query)
-      .populate('type', 'name icon color') // Загружаем информацию о категории
+      .populate('type', 'name icon color') 
       .sort({ date: -1 })
       .limit(parseInt(limit))
       .skip((parseInt(page) - 1) * parseInt(limit));
@@ -47,7 +48,6 @@ exports.getIncome = async (req, res) => {
 
 exports.createIncome = async (req, res) => {
   try {
-    // Проверяем существование категории
     const category = await Category.findOne({ 
       _id: req.body.type, 
       userId: req.user.id,
@@ -64,7 +64,6 @@ exports.createIncome = async (req, res) => {
     req.body.userId = req.user.id;
     const income = await Income.create(req.body);
     
-    // Загружаем созданный доход с информацией о категории
     const populatedIncome = await Income.findById(income._id)
       .populate('type', 'name icon color');
     
@@ -79,7 +78,6 @@ exports.updateIncome = async (req, res) => {
     let income = await Income.findOne({ _id: req.params.id, userId: req.user.id });
     if (!income) return res.status(404).json({ success: false, message: 'Доход не найден' });
     
-    // Если меняется категория, проверяем её существование
     if (req.body.type) {
       const category = await Category.findOne({ 
         _id: req.body.type, 
@@ -156,5 +154,29 @@ exports.getIncomesStats = async (req, res) => {
     res.status(200).json({ success: true, data: stats });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Ошибка получения статистики', error: error.message });
+  }
+};
+
+// <--- 2. Добавьте этот метод в конец файла
+exports.getIncomeUsageHistory = async (req, res) => {
+  try {
+    const history = await IncomeUsage.find({ userId: req.user.id })
+      .sort({ usageDate: -1 })
+      .populate({
+        path: 'incomeId',
+        select: 'source amount date type' 
+      });
+
+    res.status(200).json({
+      success: true,
+      data: history
+    });
+  } catch (error) {
+    console.error('Error fetching income usage history:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Ошибка при получении истории операций',
+      error: error.message 
+    });
   }
 };
