@@ -1,14 +1,29 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { TrendingUp, TrendingDown, Zap, Building2, Plus, Edit, Trash2, DollarSign } from "lucide-react";
+import { TrendingUp, TrendingDown, Zap, Building2, Plus, Edit, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { apiService } from "../services/api"; // Import real API service
+import { apiService } from "../services/api";
+import { cn } from "@/lib/utils"; // Убедитесь, что у вас есть эта утилита, или удалите cn и используйте шаблонные строки
 
 const addNotification = (msg: any) => console.log(msg);
+
+// Палитра цветов как на изображении
+const CATEGORY_COLORS = [
+  "#60A5FA", // Blue
+  "#34D399", // Green
+  "#A78BFA", // Purple
+  "#FBBF24", // Yellow
+  "#F87171", // Red/Salmon
+  "#818CF8", // Indigo
+  "#FB923C", // Orange
+  "#22D3EE", // Cyan
+  "#4ADE80", // Lime
+  "#F472B6", // Pink
+];
 
 interface Bank {
   _id: string;
@@ -31,6 +46,7 @@ interface Category {
   description?: string;
   isDefault?: boolean;
   order?: number;
+  color?: string; // Добавлено поле цвета
 }
 
 function References() {
@@ -55,6 +71,9 @@ function References() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [categoryType, setCategoryType] = useState<'income' | 'expense'>('income');
+  
+  // State для выбранного цвета
+  const [selectedColor, setSelectedColor] = useState<string>(CATEGORY_COLORS[0]);
 
   // Load Banks
   const loadBanks = async () => {
@@ -238,6 +257,7 @@ function References() {
       name: formData.get("name") as string,
       type: categoryType,
       description: formData.get("description") as string || undefined,
+      color: selectedColor, // Отправляем выбранный цвет
     };
 
     try {
@@ -284,6 +304,8 @@ function References() {
   const openCategoryDialog = (type: 'income' | 'expense', category?: Category) => {
     setCategoryType(type);
     setEditingCategory(category || null);
+    // Если редактируем - берем цвет категории, иначе дефолтный первый цвет
+    setSelectedColor(category?.color || CATEGORY_COLORS[0]);
     setIsCategoryDialogOpen(true);
   };
 
@@ -300,6 +322,7 @@ function References() {
         {/* БАНКИ */}
         <TabsContent value="banks" className="mt-6">
           <Card className="rounded-2xl">
+             {/* ... (код банков без изменений) ... */}
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="w-5 h-5" />
@@ -405,7 +428,8 @@ function References() {
 
         {/* ТИПЫ КОММУНАЛЬНЫХ УСЛУГ */}
         <TabsContent value="utilities" className="mt-6">
-          <Card className="rounded-2xl">
+           {/* ... (код коммуналки без изменений) ... */}
+           <Card className="rounded-2xl">
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-2">
                 <Zap className="w-5 h-5" />
@@ -539,6 +563,28 @@ function References() {
                         placeholder="Например: Зарплата"
                       />
                     </div>
+
+                    {/* Блок выбора цвета */}
+                    <div>
+                      <Label className="mb-2 block">Цвет категории</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {CATEGORY_COLORS.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => setSelectedColor(color)}
+                            className={`w-8 h-8 rounded-full transition-all border-2 ${
+                              selectedColor === color 
+                                ? "border-foreground ring-2 ring-offset-2 ring-foreground/20 scale-110" 
+                                : "border-transparent hover:scale-105"
+                            }`}
+                            style={{ backgroundColor: color }}
+                            aria-label={`Select color ${color}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
                     <div>
                       <Label htmlFor="description">Описание (опционально)</Label>
                       <Input
@@ -580,11 +626,20 @@ function References() {
                 <div className="space-y-2">
                   {incomeCategories.map(category => (
                     <div key={category._id} className="flex items-center justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
-                      <div className="flex-1">
-                        <h4 className="font-medium">{category.name}</h4>
-                        {category.description && (
-                          <p className="text-sm text-muted-foreground">{category.description}</p>
+                      <div className="flex items-center gap-3 flex-1">
+                        {/* Кружок цвета в списке */}
+                        {category.color && (
+                          <div 
+                            className="w-4 h-4 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: category.color }}
+                          />
                         )}
+                        <div>
+                          <h4 className="font-medium">{category.name}</h4>
+                          {category.description && (
+                            <p className="text-sm text-muted-foreground">{category.description}</p>
+                          )}
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         <Button
@@ -642,6 +697,28 @@ function References() {
                         placeholder="Например: Продукты"
                       />
                     </div>
+
+                    {/* Блок выбора цвета */}
+                    <div>
+                      <Label className="mb-2 block">Цвет категории</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {CATEGORY_COLORS.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => setSelectedColor(color)}
+                            className={`w-8 h-8 rounded-full transition-all border-2 ${
+                              selectedColor === color 
+                                ? "border-foreground ring-2 ring-offset-2 ring-foreground/20 scale-110" 
+                                : "border-transparent hover:scale-105"
+                            }`}
+                            style={{ backgroundColor: color }}
+                            aria-label={`Select color ${color}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
                     <div>
                       <Label htmlFor="description-expense">Описание (опционально)</Label>
                       <Input
@@ -683,11 +760,20 @@ function References() {
                 <div className="space-y-2">
                   {expenseCategories.map(category => (
                     <div key={category._id} className="flex items-center justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
-                      <div className="flex-1">
-                        <h4 className="font-medium">{category.name}</h4>
-                        {category.description && (
-                          <p className="text-sm text-muted-foreground">{category.description}</p>
+                      <div className="flex items-center gap-3 flex-1">
+                         {/* Кружок цвета в списке */}
+                        {category.color && (
+                          <div 
+                            className="w-4 h-4 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: category.color }}
+                          />
                         )}
+                        <div>
+                          <h4 className="font-medium">{category.name}</h4>
+                          {category.description && (
+                            <p className="text-sm text-muted-foreground">{category.description}</p>
+                          )}
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         <Button

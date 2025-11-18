@@ -431,7 +431,7 @@ exports.validateExpense = (req, res, next) => {
 
 // Валидация Category (категории)
 exports.validateCategory = (req, res, next) => {
-  const { name, type } = req.body;
+  const { name, type, color } = req.body;
   const errors = [];
 
   // Проверка названия
@@ -447,6 +447,35 @@ exports.validateCategory = (req, res, next) => {
     errors.push('Тип категории обязателен');
   } else if (!validTypes.includes(type)) {
     errors.push('Недопустимый тип категории');
+  }
+
+  // Проверка цвета (если указан)
+  if (color) {
+    // Проверяем формат HEX цвета
+    if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
+      errors.push('Цвет должен быть в формате HEX (#RRGGBB)');
+    }
+  }
+
+  // Проверка иконки (если есть)
+  if (req.body.icon && req.body.icon.length > 50) {
+    errors.push('Название иконки не может быть длиннее 50 символов');
+  }
+
+  // Проверка бюджета (если есть)
+  if (req.body.budget !== undefined && req.body.budget !== null) {
+    const budget = parseFloat(req.body.budget);
+    if (isNaN(budget) || budget < 0) {
+      errors.push('Бюджет должен быть положительным числом или нулем');
+    }
+  }
+
+  // Проверка порядка (если есть)
+  if (req.body.order !== undefined && req.body.order !== null) {
+    const order = parseInt(req.body.order);
+    if (isNaN(order)) {
+      errors.push('Порядок должен быть числом');
+    }
   }
 
   if (errors.length > 0) {

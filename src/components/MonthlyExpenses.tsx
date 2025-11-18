@@ -41,7 +41,11 @@ function MonthlyExpenses() {
       // Загружаем категории расходов
       const categoriesRes = await apiService.getCategories('expense');
       if (categoriesRes.success) {
-        setCategories(categoriesRes.data);
+        const mappedCategories = categoriesRes.data.map((cat: any) => ({
+          ...cat,
+          id: cat._id || cat.id
+        }));
+        setCategories(mappedCategories);
       }
 
       // Загружаем ежемесячные расходы
@@ -82,9 +86,9 @@ function MonthlyExpenses() {
         };
       }
 
-      const mappedExpense: MonthlyExpense = {
+const mappedExpense: MonthlyExpense = {
         id: expense._id || expense.id,
-        categoryId: expense.category,
+        categoryId: expense.category?._id || expense.category,
         name: expense.name,
         plannedAmount: parseFloat(expense.amount),
         actualAmount: expense.actualAmount ? parseFloat(expense.actualAmount) : undefined,
@@ -486,6 +490,7 @@ function MonthlyExpenses() {
                                     onClick={() => {
                                       setEditingExpense(expense);
                                       setSelectedBudgetId(currentBudget.id);
+                                      setSelectedCategory(expense.categoryId); // <-- ДОБАВЬТЕ ЭТУ СТРОКУ
                                       setIsExpenseDialogOpen(true);
                                     }}
                                   >
@@ -515,7 +520,14 @@ function MonthlyExpenses() {
           </Card>
 
           {/* Диалог добавления расхода */}
-          <Dialog open={isExpenseDialogOpen} onOpenChange={setIsExpenseDialogOpen}>
+          <Dialog open={isExpenseDialogOpen} onOpenChange={(open) => {
+            setIsExpenseDialogOpen(open);
+            if (!open) {
+              setEditingExpense(null);
+              setSelectedBudgetId("");
+              setSelectedCategory("");
+            }
+          }}>
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>{editingExpense ? "Редактировать расход" : "Добавить расход"}</DialogTitle>
@@ -542,7 +554,13 @@ function MonthlyExpenses() {
                     <SelectContent>
                       {categories.map(category => (
                         <SelectItem key={category.id} value={category.id}>
-                          {category.name}
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: category.color }}
+                            />
+                            {category.name}
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -576,8 +594,9 @@ function MonthlyExpenses() {
                     id="dueDate"
                     name="dueDate"
                     type="date"
+                    className="date-input"
                     required
-                    defaultValue={editingExpense?.dueDate}
+                    defaultValue={editingExpense ? new Date(editingExpense.dueDate).toISOString().split('T')[0] : ""}
                   />
                 </div>
                 <div className="flex items-center space-x-2">
