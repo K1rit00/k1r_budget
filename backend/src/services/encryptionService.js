@@ -17,7 +17,8 @@ class EncryptionService {
   }
 
   encrypt(text) {
-    if (!text || text === '') return null;
+    if (!text && text !== 0) return null; // Обработка 0 и пустых значений
+    const textToEncrypt = String(text);
     
     try {
       const iv = crypto.randomBytes(IV_LENGTH);
@@ -27,7 +28,7 @@ class EncryptionService {
       const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
       
       const encrypted = Buffer.concat([
-        cipher.update(String(text), 'utf8'),
+        cipher.update(textToEncrypt, 'utf8'),
         cipher.final()
       ]);
       
@@ -40,26 +41,43 @@ class EncryptionService {
   }
 
   decrypt(encryptedData) {
-    if (!encryptedData || encryptedData === '') return null;
+    if (!encryptedData) return null;
     
     try {
       const buffer = Buffer.from(encryptedData, 'base64');
+      
+      // !!! ВАЖНОЕ ИСПРАВЛЕНИЕ !!!
+      // Проверяем, достаточна ли длина данных для содержания метаданных (Salt + IV + Tag)
+      // Если длина меньше 96 байт (64+16+16), значит это не зашифрованные нами данные.
+      if (buffer.length < ENCRYPTED_POSITION) {
+        // Возвращаем данные как есть, предполагая, что это старый незашифрованный текст
+        return encryptedData; 
+      }
       
       const salt = buffer.subarray(0, SALT_LENGTH);
       const iv = buffer.subarray(SALT_LENGTH, TAG_POSITION);
       const tag = buffer.subarray(TAG_POSITION, ENCRYPTED_POSITION);
       const encrypted = buffer.subarray(ENCRYPTED_POSITION);
       
+      // Дополнительная проверка на валидность IV
+      if (iv.length !== IV_LENGTH) {
+         return encryptedData;
+      }
+
       const key = crypto.pbkdf2Sync(this.key, salt, 100000, 32, 'sha512');
       const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
       decipher.setAuthTag(tag);
       
       return decipher.update(encrypted) + decipher.final('utf8');
     } catch (error) {
-      throw new Error(`Decryption failed: ${error.message}`);
+      // Если расшифровка не удалась по другой причине, логируем и возвращаем оригинал,
+      // чтобы не ронять сервер
+      console.warn(`Decryption failed for value, returning original. Error: ${error.message}`);
+      return encryptedData;
     }
   }
 
+  // ... остальные методы (encryptObject, decryptObject) остаются без изменений
   encryptObject(obj, fieldsToEncrypt) {
     if (!obj || !fieldsToEncrypt || fieldsToEncrypt.length === 0) {
       return obj;
@@ -86,6 +104,7 @@ class EncryptionService {
           decrypted[field] = this.decrypt(decrypted[field]);
         } catch (error) {
           console.error(`Failed to decrypt field ${field}:`, error.message);
+          // Оставляем оригинальное значение, если не удалось расшифровать
         }
       }
     });
