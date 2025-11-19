@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { 
-  TrendingUp, Plus, DollarSign, Briefcase, Edit, Trash2, Calendar, 
-  BarChart3, Loader2, RefreshCw, AlertCircle, Power, PowerOff, 
-  History, Play, ArrowRight, Wallet, PiggyBank 
+import {
+  TrendingUp, Plus, DollarSign, Briefcase, Edit, Trash2, Calendar,
+  BarChart3, Loader2, RefreshCw, AlertCircle, Power, PowerOff,
+  History, Play, ArrowRight, Wallet, PiggyBank
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -104,13 +104,13 @@ interface IncomeUsageTransaction {
 
 function Income() {
   const { addNotification } = useAppActions();
-  
+
   // State
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [recurringIncomes, setRecurringIncomes] = useState<RecurringIncome[]>([]);
   const [incomeCategories, setIncomeCategories] = useState<IncomeCategory[]>([]);
   const [usageHistory, setUsageHistory] = useState<IncomeUsageTransaction[]>([]); // State для истории
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -129,8 +129,8 @@ function Income() {
     try {
       setIsLoading(true);
       await Promise.all([
-        loadIncomes(), 
-        loadRecurringIncomes(), 
+        loadIncomes(),
+        loadRecurringIncomes(),
         loadIncomeCategories(),
         loadUsageHistory() // Загружаем историю
       ]);
@@ -682,7 +682,7 @@ function Income() {
           </Card>
         </TabsContent>
 
-{/* Вкладка: История операций (Транзакции) */}
+        {/* Вкладка: История операций (Движение средств) */}
         <TabsContent value="transactions">
           <Card className="rounded-2xl border shadow-sm">
             <CardHeader className="pb-4 border-b bg-muted/20">
@@ -693,96 +693,128 @@ function Income() {
                     Движение средств от доходов к накоплениям и целям
                   </p>
                 </div>
+
+                {/* Badge — всего операций */}
                 <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground bg-background px-3 py-1 rounded-full border">
                   <History className="w-3.5 h-3.5" />
                   Всего операций: {usageHistory.length}
                 </div>
               </div>
             </CardHeader>
+
             <CardContent className="p-0">
-              <div className="divide-y">
-                {usageHistory.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-center px-4">
-                    <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
-                      <History className="w-8 h-8 text-muted-foreground/50" />
-                    </div>
-                    <h3 className="font-medium text-lg text-foreground">История пуста</h3>
-                    <p className="text-muted-foreground text-sm max-w-xs mt-1">
-                      Здесь появятся записи, когда вы начнете переводить полученные доходы на депозиты.
-                    </p>
+              {/* Если пусто */}
+              {usageHistory.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+                  <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+                    <History className="w-8 h-8 text-muted-foreground/50" />
                   </div>
-                ) : (
-                  usageHistory
+                  <h3 className="font-medium text-lg text-foreground">История пуста</h3>
+                  <p className="text-muted-foreground text-sm max-w-xs mt-1">
+                    Здесь появятся записи, когда вы начнёте распределять доходы между депозитами и целями.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {usageHistory
                     .sort((a, b) => new Date(b.usageDate).getTime() - new Date(a.usageDate).getTime())
                     .map((transaction) => (
-                      <div 
-                        key={transaction.id} 
+                      <div
+                        key={transaction.id}
                         className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-muted/30 transition-all duration-200 group"
                       >
+                        {/* Левая часть */}
                         <div className="flex items-start gap-4">
                           {/* Иконка */}
-                          <div className={`mt-1 sm:mt-0 w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border shadow-sm ${
-                            transaction.usageType === 'deposit' 
-                              ? 'bg-purple-50 border-purple-100 text-purple-600 dark:bg-purple-900/20 dark:border-purple-800 dark:text-purple-400' 
-                              : 'bg-blue-50 border-blue-100 text-blue-600 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400'
-                          }`}>
-                            {transaction.usageType === 'deposit' ? <PiggyBank className="w-5 h-5" /> : <Wallet className="w-5 h-5" />}
+                          <div
+                            className={`
+                      mt-1 sm:mt-0 w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border shadow-sm
+                      ${transaction.usageType === 'deposit'
+                                ? 'bg-purple-50 border-purple-200 text-purple-600 dark:bg-purple-900/20 dark:border-purple-800 dark:text-purple-400'
+                                : 'bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400'
+                              }
+                    `}
+                          >
+                            {transaction.usageType === 'deposit' ? (
+                              <PiggyBank className="w-5 h-5" />
+                            ) : (
+                              <Wallet className="w-5 h-5" />
+                            )}
                           </div>
 
-                          {/* Основная информация */}
+                          {/* Текстовая часть */}
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-sm sm:text-base text-foreground">
-                                {transaction.usageType === 'deposit' ? 'Пополнение депозита' : 'Прочее использование'}
+                                {transaction.usageType === 'deposit'
+                                  ? 'Пополнение депозита'
+                                  : 'Использование средств'}
                               </span>
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 font-normal text-muted-foreground">
-                                {new Date(transaction.usageDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+
+                              {/* Время */}
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0 h-5 font-normal text-muted-foreground"
+                              >
+                                {new Date(transaction.usageDate).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
                               </Badge>
                             </div>
-                            
+
+                            {/* Источник */}
                             <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                              <span className="flex items-center gap-1 truncate max-w-[200px]">
+                              <span className="truncate max-w-[200px]">
                                 {transaction.incomeId?.source || 'Неизвестный источник'}
                               </span>
+
                               <ArrowRight className="w-3 h-3 text-muted-foreground/60" />
+
                               <span className="text-xs px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border">
                                 Источник
                               </span>
                             </div>
-                            
-                            {/* Дата для мобильной версии (скрыта на десктопе, если нужно экономить место, но здесь оставим как доп инфо) */}
+
+                            {/* Дата (мобильная версия) */}
                             <p className="text-xs text-muted-foreground/60 sm:hidden">
-                              {new Date(transaction.usageDate).toLocaleDateString("ru-RU", {
-                                day: 'numeric', month: 'long', year: 'numeric'
+                              {new Date(transaction.usageDate).toLocaleDateString('ru-RU', {
+                                day: 'numeric',
+                                month: 'long',
+                                year: 'numeric',
                               })}
                             </p>
+
+                            {/* Описание */}
+                            {transaction.description && (
+                              <p className="text-xs text-muted-foreground/70 italic max-w-[240px] truncate">
+                                {transaction.description}
+                              </p>
+                            )}
                           </div>
                         </div>
 
-                        {/* Правая часть: Сумма и Дата (Десктоп) */}
+                        {/* Правая часть: сумма + дата */}
                         <div className="mt-3 sm:mt-0 pl-14 sm:pl-0 text-left sm:text-right">
                           <div className="font-bold text-base sm:text-lg text-blue-600 dark:text-blue-400 tracking-tight">
-                            {Number(transaction.usedAmount).toLocaleString("kk-KZ")} ₸
+                            {Number(transaction.usedAmount).toLocaleString('kk-KZ')} ₸
                           </div>
+
                           <div className="text-xs text-muted-foreground hidden sm:block mt-0.5">
-                             {new Date(transaction.usageDate).toLocaleDateString("ru-RU", {
-                                day: 'numeric', month: 'long', year: 'numeric'
-                             })}
+                            {new Date(transaction.usageDate).toLocaleDateString('ru-RU', {
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric',
+                            })}
                           </div>
-                          {transaction.description && (
-                            <p className="text-xs text-muted-foreground/70 italic mt-1 max-w-[200px] sm:ml-auto truncate">
-                              {transaction.description}
-                            </p>
-                          )}
                         </div>
                       </div>
-                    ))
-                )}
-              </div>
+                    ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
-
         {/* Вкладка: Шаблоны регулярных доходов */}
         <TabsContent value="recurring">
           <Card className="rounded-2xl">
@@ -957,8 +989,8 @@ function Income() {
                       <div
                         key={recurring.id}
                         className={`flex items-center justify-between p-4 border rounded-lg transition-colors ${recurring.isActive
-                            ? 'bg-purple-50/50 dark:bg-purple-950/10 hover:bg-purple-100/50 dark:hover:bg-purple-950/20'
-                            : 'bg-muted/30 opacity-60'
+                          ? 'bg-purple-50/50 dark:bg-purple-950/10 hover:bg-purple-100/50 dark:hover:bg-purple-950/20'
+                          : 'bg-muted/30 opacity-60'
                           }`}
                       >
                         <div className="flex-1">
