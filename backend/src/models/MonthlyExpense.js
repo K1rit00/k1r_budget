@@ -44,6 +44,21 @@ const monthlyExpenseSchema = new mongoose.Schema({
     type: String,
     trim: true,
     maxlength: 500
+  },
+  sourceIncome: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Income',
+    default: null
+  },
+  storageDeposit: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Deposit',
+    default: null
+  },
+  
+  createdAt: {
+    type: Date,
+    default: Date.now
   }
 }, {
   timestamps: true

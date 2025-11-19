@@ -203,6 +203,8 @@ export interface MonthlyExpense {
   isRecurring: boolean;
   status: "planned" | "paid" | "overdue";
   description?: string;
+  sourceIncome?: string;
+  storageDeposit?: string;
 }
 
 export interface MonthlyBudget {

@@ -144,20 +144,20 @@ exports.validateRecurringIncome = (req, res, next) => {
  * Валидация кредита
  */
 exports.validateCredit = (req, res, next) => {
-  const { 
-    name, 
-    bank, 
-    amount, 
-    interestRate, 
-    monthlyPayment, 
+  const {
+    name,
+    bank,
+    amount,
+    interestRate,
+    monthlyPayment,
     monthlyPaymentDate,
-    startDate, 
+    startDate,
     termInMonths, // <<< ИЗМЕНЕНИЕ
-    type 
+    type
   } = req.body;
   const errors = [];
 
-// Проверка названия
+  // Проверка названия
   if (!name || name.trim() === '') {
     errors.push('Название кредита обязательно');
   } else if (name.length > 200) {
@@ -228,7 +228,7 @@ exports.validateCredit = (req, res, next) => {
   }
 
   // Проверка даты окончания
-if (!termInMonths) {
+  if (!termInMonths) {
     errors.push('Срок в месяцах обязателен');
   } else {
     const term = parseInt(termInMonths);
@@ -265,7 +265,7 @@ if (!termInMonths) {
     if (isNaN(balance) || balance < 0) {
       errors.push('Текущий баланс не может быть отрицательным');
     }
-    
+
     // Баланс не может превышать сумму кредита
     if (amount && balance > parseFloat(amount)) {
       errors.push('Текущий баланс не может превышать сумму кредита');
@@ -341,7 +341,7 @@ exports.validateCreditPayment = (req, res, next) => {
   if (amount && principalAmount !== undefined && interestAmount !== undefined) {
     const totalCalculated = parseFloat(principalAmount) + parseFloat(interestAmount);
     const difference = Math.abs(totalCalculated - parseFloat(amount));
-    
+
     if (difference > 0.01) {
       errors.push('Сумма платежа должна быть равна сумме основного долга и процентов');
     }
@@ -730,20 +730,22 @@ exports.validateUtilityType = (req, res, next) => {
 
 // Валидация MonthlyExpense (ежемесячные расходы)
 exports.validateMonthlyExpense = (req, res, next) => {
-  const { name, amount, category, dueDate } = req.body;
+  const { name, amount, category, dueDate, sourceIncome, storageDeposit } = req.body;
   const errors = [];
 
+  // Определяем, является ли запрос обновлением
+  const isUpdate = req.method === 'PUT';
   // Проверка названия
-  if (!name || name.trim() === '') {
+  if ((!isUpdate && !name) || (name && name.trim() === '')) {
     errors.push('Название расхода обязательно');
-  } else if (name.length > 200) {
+  } else if (name && name.length > 200) {
     errors.push('Название не может быть длиннее 200 символов');
   }
 
   // Проверка суммы
-  if (!amount && amount !== 0) {
+  if ((!isUpdate && !amount && amount !== 0)) {
     errors.push('Сумма обязательна');
-  } else {
+  } else if (amount !== undefined) { // Проверяем, только если сумма передана
     const amountNum = parseFloat(amount);
     if (isNaN(amountNum) || amountNum <= 0) {
       errors.push('Сумма должна быть положительным числом');
@@ -753,17 +755,21 @@ exports.validateMonthlyExpense = (req, res, next) => {
     }
   }
 
-  // Проверка категории (должна быть ObjectId)
-  if (!category || category.trim() === '') {
+  // Проверка категории
+  if (!isUpdate && !category) {
     errors.push('Категория обязательна');
-  } else if (!/^[0-9a-fA-F]{24}$/.test(category)) {
-    errors.push('Некорректный ID категории');
+  } else if (category) { // Если категория передана
+    if (category.trim() === '') {
+      errors.push('Категория обязательна');
+    } else if (!/^[0-9a-fA-F]{24}$/.test(category)) {
+      errors.push('Некорректный ID категории');
+    }
   }
 
   // Проверка даты
-  if (!dueDate) {
+  if (!isUpdate && !dueDate) {
     errors.push('Дата обязательна');
-  } else {
+  } else if (dueDate) { // Если дата передана
     const date = new Date(dueDate);
     if (isNaN(date.getTime())) {
       errors.push('Некорректная дата');
@@ -790,6 +796,19 @@ exports.validateMonthlyExpense = (req, res, next) => {
   // Проверка описания
   if (req.body.description && req.body.description.length > 500) {
     errors.push('Описание не может быть длиннее 500 символов');
+  }
+
+  // Новые проверки
+  if (sourceIncome && !/^[0-9a-fA-F]{24}$/.test(sourceIncome)) {
+    errors.push('Некорректный ID источника дохода');
+  }
+
+  if (storageDeposit && !/^[0-9a-fA-F]{24}$/.test(storageDeposit)) {
+    errors.push('Некорректный ID депозита хранения');
+  }
+  // Эту проверку имеет смысл делать только при создании или если переданы оба поля
+  if ((sourceIncome && !storageDeposit) && !isUpdate) {
+    errors.push('При выборе источника дохода необходимо указать депозит для хранения средств');
   }
 
   if (errors.length > 0) {
