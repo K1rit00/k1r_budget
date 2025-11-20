@@ -390,6 +390,11 @@ export const apiService = {
     return response.data;
   },
 
+  transferRecurringExpenses: async (data: { sourceIncomeId: string, currentMonthDate: string }) => {
+    const response = await api.post('/monthly-expenses/transfer', data);
+    return response.data;
+  },
+
   updateMonthlyExpense: async (id: string, data: any) => {
     const response = await api.put(`/monthly-expenses/${id}`, data);
     return response.data;

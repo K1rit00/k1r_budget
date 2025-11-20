@@ -8,20 +8,23 @@ const {
   deleteMonthlyExpense,
   getMonthlyStats,
   getOverdueExpenses,
-  updateOverdueStatus
+  updateOverdueStatus,
+  transferRecurringExpenses
 } = require('../controllers/monthlyExpenseController');
 const { protect } = require('../middleware/auth');
 const { validateMonthlyExpense } = require('../middleware/validation');
 
 router.use(protect);
 
-router.route('/')
-  .get(getMonthlyExpenses)
-  .post(validateMonthlyExpense, createMonthlyExpense);
-
+// Сначала специфические маршруты
+router.post('/transfer', transferRecurringExpenses); // Новый маршрут
 router.get('/stats/by-month', getMonthlyStats);
 router.get('/overdue', getOverdueExpenses);
 router.post('/update-overdue', updateOverdueStatus);
+
+router.route('/')
+  .get(getMonthlyExpenses)
+  .post(validateMonthlyExpense, createMonthlyExpense);
 
 router.route('/:id')
   .get(getMonthlyExpense)

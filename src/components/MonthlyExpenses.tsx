@@ -81,7 +81,7 @@ function MonthlyExpenses() {
         isRecurring: expense.isRecurring,
         status: expense.status,
         description: expense.description,
-        sourceIncome: expense.sourceIncome,
+        sourceIncome: expense.sourceIncome?._id || expense.sourceIncome?.id || expense.sourceIncome, // ИЗМЕНЕНИЕ
         storageDeposit: expense.storageDeposit?._id || expense.storageDeposit?.id || expense.storageDeposit
       };
 
@@ -319,19 +319,24 @@ function MonthlyExpenses() {
     }
   };
 
-  const markExpenseAsPaid = async (budgetId: string, expenseId: string, amount: number) => {
+  // ИЗМЕНЕНИЕ: Теперь paymentAmount - это сумма текущего платежа, а не общая сумма.
+  const markExpenseAsPaid = async (budgetId: string, expenseId: string, paymentAmount: number) => {
     const budget = budgets.find(b => b.id === budgetId);
     const expense = budget?.expenses.find(e => e.id === expenseId);
     
     if (!expense) return;
 
-    const isFullPayment = amount >= expense.plannedAmount;
+    // Расчет новой общей оплаченной суммы
+    const oldActualAmount = expense.actualAmount || 0;
+    const newActualAmount = oldActualAmount + paymentAmount;
+    
+    const isFullPayment = newActualAmount >= expense.plannedAmount;
     const newStatus = isFullPayment ? 'paid' : 'planned';
 
     try {
       await apiService.updateMonthlyExpense(expenseId, {
         status: newStatus,
-        actualAmount: amount
+        actualAmount: newActualAmount // Отправляем новую ОБЩУЮ сумму
       });
       
       addNotification({ 
@@ -380,6 +385,7 @@ function MonthlyExpenses() {
           const actual = expense.actualAmount || 0;
           const remaining = expense.plannedAmount - actual;
           const isLowBalance = remaining > 0 && remaining <= 5000 && expense.status !== 'paid';
+          const defaultPaymentAmount = remaining > 0 ? remaining : expense.plannedAmount; // Значение по умолчанию
 
           return (
             <div key={expense.id} className={`p-4 border rounded-lg ${isOverdue ? 'border-red-300 bg-red-50/50 dark:bg-red-950/20' : ''}`}>
@@ -411,24 +417,31 @@ function MonthlyExpenses() {
                           e.preventDefault();
                           const formDataInput = new FormData(e.target as HTMLFormElement);
                           const amount = parseFloat(formDataInput.get("amount") as string);
+                          // Теперь amount - это сумма текущего платежа
                           markExpenseAsPaid(budgetId, expense.id, amount);
                         }}>
                           <div className="space-y-4">
                             <div>
-                              <Label htmlFor="amount">Фактическая сумма (₸)</Label>
+                              <Label htmlFor="amount">Сумма оплаты (₸)</Label> {/* Изменено */}
                               <Input 
                                 id="amount" 
                                 name="amount" 
                                 type="number" 
                                 step="0.01" 
                                 required 
-                                defaultValue={expense.plannedAmount} 
+                                defaultValue={defaultPaymentAmount}
                               />
                               {isPartial && (
                                 <p className="text-xs text-muted-foreground mt-1">
                                   Уже оплачено: {expense.actualAmount?.toLocaleString("kk-KZ")} ₸. <br/>
-                                  Введите <b>общую итоговую сумму</b>.
+                                  Остаток к оплате: <span className="font-semibold">{remaining.toLocaleString("kk-KZ")} ₸</span>. <br/>
+                                  Введите сумму, которую хотите оплатить сейчас.
                                 </p>
+                              )}
+                              {!isPartial && (
+                                 <p className="text-xs text-muted-foreground mt-1">
+                                    План: {expense.plannedAmount.toLocaleString("kk-KZ")} ₸. Введите сумму оплаты.
+                                 </p>
                               )}
                             </div>
                             <Button type="submit" className="w-full">
@@ -1012,6 +1025,7 @@ function MonthlyExpenses() {
                     type="month" 
                     id="monthYear" 
                     name="monthYear" 
+                    className="date-input"
                     required
                     defaultValue={new Date().toISOString().slice(0, 7)}
                  />
