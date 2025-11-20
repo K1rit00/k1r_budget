@@ -95,61 +95,55 @@ exports.createMonthlyExpense = async (req, res) => {
   try {
     const { amount, category: categoryId, sourceIncome, storageDeposit, name } = req.body;
     
-    // 1. Проверка категории
-    const category = await Category.findOne({
-      _id: categoryId,
-      userId: req.user.id,
-      type: 'expense'
-    });
+    const category = await Category.findOne({ _id: categoryId, userId: req.user.id });
+    if (!category) return res.status(400).json({ success: false, message: 'Категория не найдена' });
 
-    if (!category) {
-      return res.status(400).json({ success: false, message: 'Категория не найдена' });
-    }
-
-// Логика перевода средств
+    // === ЛОГИКА ПЕРЕВОДА (РЕЗЕРВИРОВАНИЕ СРЕДСТВ) ===
     if (sourceIncome && storageDeposit) {
       const income = await Income.findOne({ _id: sourceIncome, userId: req.user.id });
-      if (!income) {
-        return res.status(400).json({ success: false, message: 'Источник дохода не найден' });
-      }
+      if (!income) return res.status(400).json({ success: false, message: 'Источник дохода не найден' });
 
-      if (income.availableAmount < parseFloat(amount)) {
+      // Используем availableAmount или amount, если поля available нет
+      const currentAvailable = income.availableAmount !== undefined ? income.availableAmount : income.amount;
+
+      if (currentAvailable < parseFloat(amount)) {
         return res.status(400).json({ success: false, message: 'Недостаточно свободных средств в выбранном доходе' });
       }
 
       const deposit = await Deposit.findOne({ _id: storageDeposit, userId: req.user.id });
-      if (!deposit) {
-        return res.status(400).json({ success: false, message: 'Депозит хранения не найден' });
-      }
+      if (!deposit) return res.status(400).json({ success: false, message: 'Депозит хранения не найден' });
 
-      // A. Обновляем доход
-      income.availableAmount -= parseFloat(amount);
+      // 1. Вычитаем из Дохода
+      if (income.availableAmount !== undefined) {
+        income.availableAmount -= parseFloat(amount);
+      } else {
+        // Если поле не было инициализировано
+        income.availableAmount = income.amount - parseFloat(amount);
+      }
       income.usedAmount = (income.usedAmount || 0) + parseFloat(amount);
       await income.save();
 
-      // B. Обновляем депозит
+      // 2. Прибавляем к Депозиту (откладываем)
       deposit.currentBalance += parseFloat(amount);
       await deposit.save();
 
-      // C. Создаем транзакцию депозита
-      // Сохраняем результат в переменную, чтобы получить ID транзакции
+      // 3. Записываем транзакцию пополнения депозита
       const transaction = await DepositTransaction.create({
         userId: req.user.id,
         depositId: deposit._id,
         type: 'deposit',
         amount: parseFloat(amount),
         transactionDate: new Date(),
-        description: `Аллокация средств на расход: ${name}`,
+        description: `Резерв под расход: ${name}`,
         incomeId: income._id
       });
 
-      // 2. ДОБАВЛЯЕМ СОХРАНЕНИЕ INCOME USAGE
-      // Это та часть, которой не хватало
+      // 4. Записываем использование дохода
       await IncomeUsage.create({
         userId: req.user.id,
         incomeId: income._id,
         usedAmount: parseFloat(amount),
-        usageType: 'deposit', // Мы переводим на депозит перед тратой
+        usageType: 'deposit',
         depositTransactionId: transaction._id,
         description: `Использование для расхода: ${name}`,
         usageDate: new Date()
@@ -157,25 +151,15 @@ exports.createMonthlyExpense = async (req, res) => {
     }
 
     req.body.userId = req.user.id;
-
-    // Создаем расход
     const expense = await MonthlyExpense.create(req.body);
-
     const populatedExpense = await MonthlyExpense.findById(expense._id)
       .populate('category', 'name color icon')
-      .populate('storageDeposit', 'name bankName'); // Популируем депозит для фронтенда
+      .populate('storageDeposit', 'name bankName');
 
-    res.status(201).json({
-      success: true,
-      data: populatedExpense
-    });
+    res.status(201).json({ success: true, data: populatedExpense });
   } catch (error) {
     console.error('Error creating monthly expense:', error);
-    res.status(400).json({
-      success: false,
-      message: 'Ошибка создания расхода',
-      error: error.message
-    });
+    res.status(400).json({ success: false, message: 'Ошибка создания расхода', error: error.message });
   }
 };
 
@@ -184,46 +168,38 @@ exports.createMonthlyExpense = async (req, res) => {
 // @access  Private
 exports.updateMonthlyExpense = async (req, res) => {
   try {
-    let expense = await MonthlyExpense.findOne({
-      _id: req.params.id,
-      userId: req.user.id
-    });
-
+    let expense = await MonthlyExpense.findOne({ _id: req.params.id, userId: req.user.id });
     if (!expense) return res.status(404).json({ success: false, message: 'Расход не найден' });
 
-    // Логика списания средств при оплате
-    // Если статус меняется на 'paid' ИЛИ обновляется actualAmount у уже оплаченного
-    const isPayingNow = req.body.status === 'paid' && expense.status !== 'paid';
-    const isUpdatingPaidAmount = expense.status === 'paid' && req.body.actualAmount;
+    // === ЛОГИКА СПИСАНИЯ С ДЕПОЗИТА ПРИ ОПЛАТЕ ===
+    // Проверяем, изменилась ли фактическая сумма оплаты
+    if (req.body.actualAmount !== undefined) {
+      const oldActual = expense.actualAmount ? parseFloat(expense.actualAmount) : 0;
+      const newActual = parseFloat(req.body.actualAmount);
+      const difference = newActual - oldActual;
 
-    if (isPayingNow || isUpdatingPaidAmount) {
-      const paymentAmount = parseFloat(req.body.actualAmount || expense.amount);
-      const depositId = req.body.storageDeposit || expense.storageDeposit;
-
-      if (depositId) {
-        const deposit = await Deposit.findOne({ _id: depositId, userId: req.user.id });
+      // Если сумма увеличилась (мы доплатили), списываем разницу с депозита
+      if (difference > 0) {
+        const depositId = req.body.storageDeposit || expense.storageDeposit;
         
-        if (deposit) {
-          // Если просто обновляем сумму уже оплаченного, нужно скорректировать разницу
-          if (isUpdatingPaidAmount && expense.actualAmount) {
-             const diff = paymentAmount - expense.actualAmount;
-             deposit.currentBalance -= diff; // Если новая сумма больше, баланс меньше
-          } else {
-             // Первичное списание
-             deposit.currentBalance -= paymentAmount;
-          }
+        if (depositId) {
+          const deposit = await Deposit.findOne({ _id: depositId, userId: req.user.id });
+          if (deposit) {
+            if (deposit.currentBalance < difference) {
+               return res.status(400).json({ success: false, message: 'На депозите недостаточно средств для оплаты' });
+            }
 
-          await deposit.save();
+            deposit.currentBalance -= difference;
+            await deposit.save();
 
-          // Создаем транзакцию списания, если это первая оплата
-          if (isPayingNow) {
+            // Создаем транзакцию списания
             await DepositTransaction.create({
               userId: req.user.id,
               depositId: deposit._id,
               type: 'withdrawal',
-              amount: paymentAmount,
+              amount: difference,
               transactionDate: new Date(),
-              description: `Оплата расхода: ${expense.name}`
+              description: `Оплата расхода (частичная/полная): ${expense.name}`
             });
           }
         }
@@ -239,17 +215,10 @@ exports.updateMonthlyExpense = async (req, res) => {
     .populate('category', 'name color icon')
     .populate('storageDeposit', 'name bankName');
 
-    res.status(200).json({
-      success: true,
-      data: expense
-    });
+    res.status(200).json({ success: true, data: expense });
   } catch (error) {
     console.error('Error updating monthly expense:', error);
-    res.status(400).json({
-      success: false,
-      message: 'Ошибка обновления расхода',
-      error: error.message
-    });
+    res.status(400).json({ success: false, message: 'Ошибка обновления расхода', error: error.message });
   }
 };
 // @desc    Удалить расход
