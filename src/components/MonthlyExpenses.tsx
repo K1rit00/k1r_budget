@@ -480,14 +480,14 @@ function MonthlyExpenses() {
                 </div>
                 
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase mb-1">План</p>
+                  <p className="text-xs text-muted-foreground uppercase mb-1">Заложено</p>
                   <p className="font-medium">
                     {expense.plannedAmount.toLocaleString("kk-KZ")} ₸
                   </p>
                 </div>
 
                 <div>
-                   <p className="text-xs text-muted-foreground uppercase mb-1">Факт</p>
+                   <p className="text-xs text-muted-foreground uppercase mb-1">Потратил</p>
                    <p className="font-medium">
                       {actual > 0 ? `${actual.toLocaleString("kk-KZ")} ₸` : "-"}
                    </p>
