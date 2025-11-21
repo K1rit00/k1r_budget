@@ -519,10 +519,6 @@ function MonthlyExpenses() {
     );
   };
 
-  if (isLoading) {
-     return <div className="p-8 text-center">Загрузка расходов...</div>;
-  }
-
   return (
     <div className="space-y-6">
       {/* Статистика */}

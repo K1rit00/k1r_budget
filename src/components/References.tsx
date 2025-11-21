@@ -7,7 +7,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { apiService } from "../services/api";
-import { cn } from "@/lib/utils"; // Убедитесь, что у вас есть эта утилита, или удалите cn и используйте шаблонные строки
 
 const addNotification = (msg: any) => console.log(msg);
 
@@ -71,7 +70,7 @@ function References() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [categoryType, setCategoryType] = useState<'income' | 'expense'>('income');
-  
+
   // State для выбранного цвета
   const [selectedColor, setSelectedColor] = useState<string>(CATEGORY_COLORS[0]);
 
@@ -322,7 +321,7 @@ function References() {
         {/* БАНКИ */}
         <TabsContent value="banks" className="mt-6">
           <Card className="rounded-2xl">
-             {/* ... (код банков без изменений) ... */}
+            {/* ... (код банков без изменений) ... */}
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="w-5 h-5" />
@@ -379,9 +378,8 @@ function References() {
               </Dialog>
             </CardHeader>
             <CardContent>
-              {loadingBanks ? (
-                <div className="text-center py-8">Загрузка...</div>
-              ) : banks.length === 0 ? (
+
+              {banks.length === 0 ? (
                 <div className="text-center py-12">
                   <Building2 className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
                   <p className="text-muted-foreground">Нет банков в справочнике</p>
@@ -428,8 +426,8 @@ function References() {
 
         {/* ТИПЫ КОММУНАЛЬНЫХ УСЛУГ */}
         <TabsContent value="utilities" className="mt-6">
-           {/* ... (код коммуналки без изменений) ... */}
-           <Card className="rounded-2xl">
+          {/* ... (код коммуналки без изменений) ... */}
+          <Card className="rounded-2xl">
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-2">
                 <Zap className="w-5 h-5" />
@@ -486,9 +484,7 @@ function References() {
               </Dialog>
             </CardHeader>
             <CardContent>
-              {loadingUtilities ? (
-                <div className="text-center py-8">Загрузка...</div>
-              ) : utilityTypes.length === 0 ? (
+              {utilityTypes.length === 0 ? (
                 <div className="text-center py-12">
                   <Zap className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
                   <p className="text-muted-foreground">Нет типов коммунальных услуг</p>
@@ -573,11 +569,10 @@ function References() {
                             key={color}
                             type="button"
                             onClick={() => setSelectedColor(color)}
-                            className={`w-8 h-8 rounded-full transition-all border-2 ${
-                              selectedColor === color 
-                                ? "border-foreground ring-2 ring-offset-2 ring-foreground/20 scale-110" 
+                            className={`w-8 h-8 rounded-full transition-all border-2 ${selectedColor === color
+                                ? "border-foreground ring-2 ring-offset-2 ring-foreground/20 scale-110"
                                 : "border-transparent hover:scale-105"
-                            }`}
+                              }`}
                             style={{ backgroundColor: color }}
                             aria-label={`Select color ${color}`}
                           />
@@ -614,9 +609,7 @@ function References() {
               </Dialog>
             </CardHeader>
             <CardContent>
-              {loadingCategories ? (
-                <div className="text-center py-8">Загрузка...</div>
-              ) : incomeCategories.length === 0 ? (
+              {incomeCategories.length === 0 ? (
                 <div className="text-center py-12">
                   <TrendingUp className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
                   <p className="text-muted-foreground">Нет категорий доходов</p>
@@ -629,8 +622,8 @@ function References() {
                       <div className="flex items-center gap-3 flex-1">
                         {/* Кружок цвета в списке */}
                         {category.color && (
-                          <div 
-                            className="w-4 h-4 rounded-full flex-shrink-0" 
+                          <div
+                            className="w-4 h-4 rounded-full flex-shrink-0"
                             style={{ backgroundColor: category.color }}
                           />
                         )}
@@ -707,11 +700,10 @@ function References() {
                             key={color}
                             type="button"
                             onClick={() => setSelectedColor(color)}
-                            className={`w-8 h-8 rounded-full transition-all border-2 ${
-                              selectedColor === color 
-                                ? "border-foreground ring-2 ring-offset-2 ring-foreground/20 scale-110" 
+                            className={`w-8 h-8 rounded-full transition-all border-2 ${selectedColor === color
+                                ? "border-foreground ring-2 ring-offset-2 ring-foreground/20 scale-110"
                                 : "border-transparent hover:scale-105"
-                            }`}
+                              }`}
                             style={{ backgroundColor: color }}
                             aria-label={`Select color ${color}`}
                           />
@@ -748,9 +740,7 @@ function References() {
               </Dialog>
             </CardHeader>
             <CardContent>
-              {loadingCategories ? (
-                <div className="text-center py-8">Загрузка...</div>
-              ) : expenseCategories.length === 0 ? (
+              {expenseCategories.length === 0 ? (
                 <div className="text-center py-12">
                   <TrendingDown className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
                   <p className="text-muted-foreground">Нет категорий расходов</p>
@@ -761,10 +751,10 @@ function References() {
                   {expenseCategories.map(category => (
                     <div key={category._id} className="flex items-center justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
                       <div className="flex items-center gap-3 flex-1">
-                         {/* Кружок цвета в списке */}
+                        {/* Кружок цвета в списке */}
                         {category.color && (
-                          <div 
-                            className="w-4 h-4 rounded-full flex-shrink-0" 
+                          <div
+                            className="w-4 h-4 rounded-full flex-shrink-0"
                             style={{ backgroundColor: category.color }}
                           />
                         )}

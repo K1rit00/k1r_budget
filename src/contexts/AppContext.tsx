@@ -21,6 +21,7 @@ export interface AppState {
   user: User | null;
   currentView: string;
   loading: boolean;
+  globalLoading: boolean; // <--- НОВОЕ ПОЛЕ: Глобальная блокировка
   error: string | null;
   notifications: AppNotification[];
 }
@@ -38,6 +39,7 @@ export type AppAction =
   | { type: "SET_USER"; payload: User | null }
   | { type: "SET_CURRENT_VIEW"; payload: string }
   | { type: "SET_LOADING"; payload: boolean }
+  | { type: "SET_GLOBAL_LOADING"; payload: boolean } // <--- НОВЫЙ ACTION
   | { type: "SET_ERROR"; payload: string | null }
   | { type: "ADD_NOTIFICATION"; payload: AppNotification }
   | { type: "REMOVE_NOTIFICATION"; payload: string }
@@ -49,6 +51,7 @@ const initialState: AppState = {
   user: null,
   currentView: ROUTES_CONSTANTS.DASHBOARD,
   loading: false,
+  globalLoading: false, // <--- Инициализация
   error: null,
   notifications: []
 };
@@ -64,6 +67,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
     
     case "SET_LOADING":
       return { ...state, loading: action.payload };
+
+    case "SET_GLOBAL_LOADING": // <--- Обработка
+      return { ...state, globalLoading: action.payload };
     
     case "SET_ERROR":
       return { ...state, error: action.payload };
@@ -129,6 +135,7 @@ export function useAppActions() {
     setUser: (user: User | null) => dispatch({ type: "SET_USER", payload: user }),
     setCurrentView: (view: string) => dispatch({ type: "SET_CURRENT_VIEW", payload: view }),
     setLoading: (loading: boolean) => dispatch({ type: "SET_LOADING", payload: loading }),
+    setGlobalLoading: (loading: boolean) => dispatch({ type: "SET_GLOBAL_LOADING", payload: loading }), // <--- НОВЫЙ ХЕЛПЕР
     setError: (error: string | null) => dispatch({ type: "SET_ERROR", payload: error }),
     addNotification: (notification: Omit<AppNotification, "id" | "timestamp">) => {
       dispatch({

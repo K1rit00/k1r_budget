@@ -1,31 +1,6 @@
-import { useState } from "react";
-import {
-  Calendar,
-  Home,
-  User,
-  Settings,
-  CreditCard,
-  Building,
-  Wallet,
-  Heart,
-  BookOpen,
-  PlusCircle,
-  Bell,
-  Zap,
-  TrendingUp,
-  PiggyBank,
-} from "lucide-react";
-
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "./ui/sidebar";
+import {Calendar,Home,User,CreditCard,Building,Wallet,BookOpen,PlusCircle,Zap,TrendingUp,PiggyBank,} from "lucide-react";
+import { useAppContext, useAppActions } from "../contexts/AppContext"; // Импортируем контекст
+import {Sidebar,SidebarContent,SidebarGroup,SidebarGroupContent,SidebarGroupLabel,SidebarMenu,SidebarMenuButton,SidebarMenuItem,} from "./ui/sidebar";
 
 const mainItems = [
   {
@@ -94,7 +69,24 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
+  // Получаем состояние и действия
+  const { state } = useAppContext();
+  const { setGlobalLoading } = useAppActions(); // Достаем экшен установки загрузки
+  const isLoading = state.globalLoading;
+
   const isActive = (url: string) => currentView === url.substring(1);
+
+  // Функция обработки навигации
+  const handleNavigation = (url: string) => {
+    const targetView = url.substring(1);
+    
+    // Блокируем, если уже идет загрузка или мы уже на этой странице
+    if (isLoading || currentView === targetView) return;
+
+    // 1. Мгновенно включаем глобальный лоадер
+    setGlobalLoading(true);
+    onViewChange(targetView);
+  };
 
   return (
     <Sidebar>
@@ -110,12 +102,17 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                   <SidebarMenuButton
                     asChild
                     isActive={isActive(item.url)}
-                    onClick={() => onViewChange(item.url.substring(1))}
+                    disabled={isLoading} // Блокируем кнопку визуально
+                    onClick={(e) => {
+                      e.preventDefault(); // Предотвращаем стандартное поведение ссылки
+                      handleNavigation(item.url);
+                    }}
+                    className={isLoading ? "opacity-50 cursor-not-allowed pointer-events-none" : ""}
                   >
-                    <button className="flex items-center gap-3 px-4 py-3 w-full text-left">
+                    <a href={item.url} className="flex items-center gap-3 px-4 py-3 w-full text-left">
                       <item.icon className="w-5 h-5" />
                       <span>{item.title}</span>
-                    </button>
+                    </a>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -134,12 +131,17 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                   <SidebarMenuButton
                     asChild
                     isActive={isActive(item.url)}
-                    onClick={() => onViewChange(item.url.substring(1))}
+                    disabled={isLoading} // Блокируем кнопку визуально
+                    onClick={(e) => {
+                      e.preventDefault(); // Предотвращаем стандартное поведение ссылки
+                      handleNavigation(item.url);
+                    }}
+                    className={isLoading ? "opacity-50 cursor-not-allowed pointer-events-none" : ""}
                   >
-                    <button className="flex items-center gap-3 px-4 py-3 w-full text-left">
+                    <a href={item.url} className="flex items-center gap-3 px-4 py-3 w-full text-left">
                       <item.icon className="w-5 h-5" />
                       <span>{item.title}</span>
-                    </button>
+                    </a>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}

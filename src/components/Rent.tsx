@@ -710,17 +710,6 @@ function Rent() {
     return utilityType?.name;
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-muted-foreground">Загрузка данных...</p>
-        </div>
-      </div>
-    );
-  }
-
   if (error && properties.length === 0) {
     return (
       <div className="space-y-4">

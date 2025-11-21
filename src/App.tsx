@@ -1,4 +1,4 @@
-import React, { Suspense, useMemo, lazy, useEffect, useState } from "react";
+import React, { Suspense, useMemo, lazy, useEffect, useState, useRef } from "react";
 import { SidebarProvider, SidebarInset } from "./components/ui/sidebar";
 import { AppSidebar } from "./components/AppSidebar";
 import { Auth } from "./components/Auth";
@@ -11,7 +11,9 @@ import { AppProvider, useAppContext, useAppActions } from "./contexts/AppContext
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingFallback } from "./components/common/LoadingFallback";
 import { NotificationCenter } from "./components/common/NotificationCenter";
-import { apiService } from "./services/api";
+// Импортируем сам инстанс api (default export) вместе с сервисом
+import api, { apiService } from "./services/api"; 
+import { GlobalLoader, FullScreenLoaderUI } from "./services/GlobalLoader";
 import type { User } from "./types";
 
 // Локальные константы
@@ -72,9 +74,75 @@ const Deposits = lazy(() => import("./components/Deposits"));
 
 function AppContent() {
   const { state } = useAppContext();
-  const { setUser, setCurrentView } = useAppActions();
+  const { setUser, setCurrentView, setGlobalLoading } = useAppActions();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
+
+  // Используем Ref для счетчика, чтобы он был доступен актуальным в обоих useEffect
+  const requestCountRef = useRef(0);
+
+  // 1. LOGIC: Интерсепторы (Счетчик активных запросов)
+  useEffect(() => {
+    const reqInterceptor = api.interceptors.request.use(
+      (config) => {
+        requestCountRef.current++;
+        setGlobalLoading(true);
+        return config;
+      },
+      (error) => {
+        requestCountRef.current--;
+        if (requestCountRef.current <= 0) {
+          requestCountRef.current = 0;
+          setGlobalLoading(false);
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    const resInterceptor = api.interceptors.response.use(
+      (response) => {
+        requestCountRef.current--;
+        if (requestCountRef.current <= 0) {
+          requestCountRef.current = 0;
+          setGlobalLoading(false);
+        }
+        return response;
+      },
+      (error) => {
+        requestCountRef.current--;
+        if (requestCountRef.current <= 0) {
+          requestCountRef.current = 0;
+          setGlobalLoading(false);
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    return () => {
+      api.interceptors.request.eject(reqInterceptor);
+      api.interceptors.response.eject(resInterceptor);
+    };
+  }, [setGlobalLoading]);
+
+  // 2. LOGIC: Страховка от вечной загрузки (Safety Timer)
+  // Исправляет проблему, когда при переходе на вкладку с кэшированными данными лоадер не исчезает.
+  useEffect(() => {
+    let safetyTimer: NodeJS.Timeout;
+
+    if (state.globalLoading) {
+      // Даем компоненту 500мс на то, чтобы инициировать сетевой запрос.
+      // Если запроса не будет (счетчик останется 0) — принудительно выключаем лоадер.
+      safetyTimer = setTimeout(() => {
+        if (requestCountRef.current === 0) {
+          setGlobalLoading(false);
+        }
+      }, 500);
+    }
+
+    return () => {
+      if (safetyTimer) clearTimeout(safetyTimer);
+    };
+  }, [state.globalLoading, state.currentView, setGlobalLoading]);
 
   // Проверяем сохраненного пользователя при загрузке приложения
   useEffect(() => {
@@ -105,17 +173,13 @@ function AppContent() {
   const handleSessionExpiration = () => {
     console.log('Session expired - logging out user');
     
-    // Показываем уведомление
     toast.error('Ваша сессия истекла', {
       description: 'Пожалуйста, войдите снова для продолжения работы',
       icon: <Clock className="w-5 h-5" />,
       duration: 5000,
     });
     
-    // Устанавливаем флаг истечения сессии
     setSessionExpired(true);
-    
-    // Очищаем пользователя и перенаправляем на страницу входа
     setUser(null);
     setCurrentView('dashboard');
   };
@@ -134,11 +198,10 @@ function AppContent() {
     if (!state.user) return;
 
     const checkActivity = setInterval(() => {
-      // Проверяем, есть ли токен
       if (!apiService.isAuthenticated()) {
         window.dispatchEvent(new Event('session-expired'));
       }
-    }, 1 * 60 * 1000); // 1 минуту
+    }, 1 * 60 * 1000);
 
     return () => clearInterval(checkActivity);
   }, [state.user]);
@@ -147,7 +210,6 @@ function AppContent() {
     setUser(userData);
     setSessionExpired(false);
     
-    // Показываем приветственное сообщение
     toast.success('Добро пожаловать!', {
       description: `Вы успешно вошли в систему`,
       duration: 3000
@@ -201,7 +263,8 @@ function AppContent() {
     };
 
     return (
-      <Suspense fallback={<LoadingFallback type="dashboard" />}>
+      // FullScreenLoaderUI через Portal гарантированно перекроет всё
+      <Suspense fallback={<FullScreenLoaderUI message="Загрузка раздела..." />}>
         <ErrorBoundary>
           {getComponent()}
         </ErrorBoundary>
@@ -239,6 +302,9 @@ function AppContent() {
 
   return (
     <SidebarProvider>
+      {/* Глобальный блокировщик интерфейса (Data Fetching) */}
+      <GlobalLoader />
+
       <div className="flex h-screen w-full">
         <AppSidebar currentView={state.currentView} onViewChange={setCurrentView} />
         <SidebarInset className="flex-1">
