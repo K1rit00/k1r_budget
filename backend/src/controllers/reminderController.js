@@ -65,3 +65,36 @@ exports.deleteReminder = asyncHandler(async (req, res) => {
     data: {}
   });
 });
+
+// @desc    Update reminder
+// @route   PUT /api/v1/reminders/:id
+// @access  Private
+exports.updateReminder = asyncHandler(async (req, res) => {
+  let reminder = await PaymentReminder.findOne({
+    _id: req.params.id,
+    user: req.user.id
+  });
+
+  if (!reminder) {
+    return res.status(404).json({
+      success: false,
+      message: 'Напоминание не найдено'
+    });
+  }
+
+  // Если обновляется дата или флаг повторения, нужно обновить dayOfMonth
+  if (req.body.isRecurring && (req.body.date || !reminder.dayOfMonth)) {
+    const date = new Date(req.body.date || reminder.date);
+    req.body.dayOfMonth = date.getDate();
+  }
+
+  reminder = await PaymentReminder.findByIdAndUpdate(req.params.id, req.body, {
+    new: true,
+    runValidators: true
+  });
+
+  res.status(200).json({
+    success: true,
+    data: reminder
+  });
+});

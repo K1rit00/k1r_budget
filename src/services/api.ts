@@ -746,12 +746,18 @@ export const apiService = {
   createReminder: async (data: {
     title: string;
     amount: number;
-    date: string; // ISO string
+    date: string;
     type: string;
     description?: string;
     isRecurring: boolean;
   }) => {
     const response = await api.post('/reminders', data);
+    return response.data;
+  },
+
+  // Добавляем метод обновления
+  updateReminder: async (id: string, data: any) => {
+    const response = await api.put(`/reminders/${id}`, data);
     return response.data;
   },
 

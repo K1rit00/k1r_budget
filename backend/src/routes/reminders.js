@@ -3,7 +3,8 @@ const express = require('express');
 const {
   getReminders,
   createReminder,
-  deleteReminder
+  deleteReminder,
+  updateReminder
 } = require('../controllers/reminderController');
 
 const router = express.Router();
@@ -16,10 +17,12 @@ router.use(protect);
 router
   .route('/')
   .get(getReminders)
-  .post(createReminder);
+  .post(createReminder)
+
 
 router
   .route('/:id')
-  .delete(deleteReminder);
+  .delete(deleteReminder)
+  .put(updateReminder);
 
 module.exports = router;

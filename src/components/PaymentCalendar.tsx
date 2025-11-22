@@ -8,7 +8,7 @@ import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Textarea } from "./ui/textarea";
 import { Badge } from "./ui/badge";
-import { Plus, Calendar as CalendarIcon, Bell, Trash2, Loader2 } from "lucide-react";
+import { Plus, Calendar as CalendarIcon, Bell, Trash2, Loader2, Pencil } from "lucide-react"; // Добавлен Pencil
 import { apiService } from "../services/api";
 import { toast } from "sonner";
 
@@ -26,16 +26,19 @@ interface PaymentReminder {
 
 export default function PaymentCalendar() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
-  const [currentMonth, setCurrentMonth] = useState<Date>(new Date()); // Новое состояние
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Новое состояние для редактирования
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Сырые данные с бэкенда
   const [credits, setCredits] = useState<any[]>([]);
   const [rents, setRents] = useState<any[]>([]);
   const [manualReminders, setManualReminders] = useState<any[]>([]);
 
-  // Форма добавления
+  // Форма добавления/редактирования
   const [formData, setFormData] = useState({
     title: "",
     amount: 0,
@@ -63,8 +66,8 @@ export default function PaymentCalendar() {
     setIsLoading(true);
     try {
       const [creditsData, rentsData, remindersData] = await Promise.all([
-        apiService.getCredits({ status: 'active' }), // Берем только активные
-        apiService.getRentProperties({ status: 'active' }), // Берем только активную аренду
+        apiService.getCredits({ status: 'active' }),
+        apiService.getRentProperties({ status: 'active' }),
         apiService.getReminders()
       ]);
 
@@ -82,27 +85,22 @@ export default function PaymentCalendar() {
   useEffect(() => {
     fetchData();
   }, []);
-  // 2. Генерация списка напоминаний на основе ОТОБРАЖАЕМОГО месяца
-  const generatedReminders = useMemo(() => {
-    // Убираем проверку if (!selectedDate), так как нам важно отображать точки даже без выбора дня
 
-    const monthIndex = currentMonth.getMonth(); // Используем currentMonth
-    const year = currentMonth.getFullYear();    // Используем currentMonth
+  // 2. Генерация списка напоминаний
+  const generatedReminders = useMemo(() => {
+    const monthIndex = currentMonth.getMonth();
+    const year = currentMonth.getFullYear();
     const reminders: PaymentReminder[] = [];
 
     // А. Обработка КРЕДИТОВ
     credits.forEach(credit => {
       let paymentDate = new Date(year, monthIndex, credit.monthlyPaymentDate);
-
-      // Коррекция даты (например, 31 февраля -> последнее число месяца)
       if (paymentDate.getMonth() !== monthIndex) {
         paymentDate = new Date(year, monthIndex + 1, 0);
       }
 
       const startDate = new Date(credit.startDate);
-      // Убираем время для корректного сравнения
       startDate.setHours(0, 0, 0, 0);
-
       const endDate = new Date(credit.endDate);
       endDate.setHours(23, 59, 59, 999);
 
@@ -125,7 +123,6 @@ export default function PaymentCalendar() {
       const paymentDate = new Date(year, monthIndex, 1);
       const startDate = new Date(rent.startDate);
       startDate.setHours(0, 0, 0, 0);
-
       const isActive = !rent.endDate || new Date(rent.endDate) >= paymentDate;
 
       if (paymentDate >= startDate && isActive) {
@@ -148,7 +145,6 @@ export default function PaymentCalendar() {
 
       if (reminder.isRecurring) {
         let targetDate = new Date(year, monthIndex, reminder.dayOfMonth || reminderDate.getDate());
-
         if (targetDate.getMonth() !== monthIndex) {
           targetDate = new Date(year, monthIndex + 1, 0);
         }
@@ -180,9 +176,8 @@ export default function PaymentCalendar() {
     });
 
     return reminders.sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [credits, rents, manualReminders, currentMonth]); // Зависимость теперь currentMonth
+  }, [credits, rents, manualReminders, currentMonth]);
 
-  // Фильтр для отображения справа (конкретный день)
   const selectedDateReminders = useMemo(() => {
     if (!selectedDate) return [];
     return generatedReminders.filter(r =>
@@ -191,38 +186,84 @@ export default function PaymentCalendar() {
     );
   }, [generatedReminders, selectedDate]);
 
-  // 3. Добавление нового напоминания
-  const handleAddReminder = async () => {
+  // --- ЛОГИКА ФОРМЫ ---
+
+  const resetForm = () => {
+    setFormData({
+      title: "",
+      amount: 0,
+      type: "other",
+      description: "",
+      recurring: false
+    });
+    setEditingId(null);
+  };
+
+  const handleOpenCreateDialog = () => {
+    resetForm();
+    setIsDialogOpen(true);
+  };
+
+  const handleEditClick = (reminder: PaymentReminder) => {
+    if (!reminder.sourceId) return;
+
+    setEditingId(reminder.sourceId);
+    setFormData({
+      title: reminder.title,
+      amount: reminder.amount,
+      type: reminder.type,
+      description: reminder.description || "",
+      recurring: reminder.recurring
+    });
+
+    // Важно: обновляем выбранную дату, чтобы пользователь видел контекст,
+    // хотя календарь может и так стоять на этой дате.
+    setSelectedDate(reminder.date);
+    setIsDialogOpen(true);
+  };
+
+  // 3. Сохранение (Создание или Обновление)
+  const handleSaveReminder = async () => {
     if (!selectedDate) return;
 
-    try {
-      await apiService.createReminder({
-        title: formData.title,
-        amount: formData.amount,
-        date: selectedDate.toISOString(),
-        type: formData.type,
-        description: formData.description,
-        isRecurring: formData.recurring
-        // На бэкенде нужно извлечь dayOfMonth из даты, если recurring = true
-      });
+    const payload = {
+      title: formData.title,
+      amount: formData.amount,
+      date: selectedDate.toISOString(),
+      type: formData.type,
+      description: formData.description,
+      isRecurring: formData.recurring
+    };
 
-      toast.success("Напоминание добавлено");
+    try {
+      if (editingId) {
+        // Обновление
+        await apiService.updateReminder(editingId, payload);
+        toast.success("Напоминание обновлено");
+      } else {
+        // Создание
+        await apiService.createReminder(payload);
+        toast.success("Напоминание добавлено");
+      }
+
       fetchData(); // Обновляем данные
-      setFormData({ title: "", amount: 0, type: "other", description: "", recurring: false });
       setIsDialogOpen(false);
+      resetForm();
     } catch (e) {
-      toast.error("Ошибка при создании напоминания");
+      console.error(e);
+      toast.error(editingId ? "Ошибка при обновлении" : "Ошибка при создании");
     }
   };
 
   // 4. Удаление напоминания
   const handleDeleteReminder = async (reminder: PaymentReminder) => {
-    if (reminder.type === 'credit' || reminder.type === 'rent') {
-      toast.error("Автоматические напоминания нельзя удалить отсюда. Измените статус кредита или аренды.");
+    // Проверяем, является ли запись автоматической (НЕ начинается с manual-)
+    if (!reminder.id.startsWith('manual-')) {
+      toast.error("Автоматические напоминания (из модулей Кредиты/Аренда) нельзя удалить здесь.");
       return;
     }
 
-    if (reminder.id.startsWith('manual-') && reminder.sourceId) {
+    if (reminder.sourceId) {
       try {
         await apiService.deleteReminder(reminder.sourceId);
         toast.success("Напоминание удалено");
@@ -247,11 +288,8 @@ export default function PaymentCalendar() {
             mode="single"
             selected={selectedDate}
             onSelect={setSelectedDate}
-
-            // Добавляем управление отображаемым месяцем
             month={currentMonth}
             onMonthChange={setCurrentMonth}
-
             className="rounded-md border mx-auto"
             modifiers={{
               hasReminder: (date) => generatedReminders.some(r =>
@@ -265,17 +303,26 @@ export default function PaymentCalendar() {
             }}
           />
 
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="w-full mt-4" disabled={!selectedDate}>
-                <Plus className="w-4 h-4 mr-2" />
-                Добавить напоминание
-              </Button>
-            </DialogTrigger>
+          <Dialog open={isDialogOpen} onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) resetForm(); // Сбрасываем форму при закрытии
+          }}>
+            <Button
+              className="w-full mt-4"
+              disabled={!selectedDate}
+              onClick={handleOpenCreateDialog}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Добавить напоминание
+            </Button>
+
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>
-                  Новое напоминание на {selectedDate?.toLocaleDateString("ru-RU")}
+                  {editingId
+                    ? "Редактирование напоминания"
+                    : `Новое напоминание на ${selectedDate?.toLocaleDateString("ru-RU")}`
+                  }
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
@@ -306,7 +353,6 @@ export default function PaymentCalendar() {
                     </SelectTrigger>
                     <SelectContent>
                       {Object.entries(typeLabels).map(([key, label]) => (
-                        // Фильтруем, чтобы нельзя было создать "Кредит" вручную отсюда, если хотите
                         <SelectItem key={key} value={key}>{label}</SelectItem>
                       ))}
                     </SelectContent>
@@ -331,8 +377,8 @@ export default function PaymentCalendar() {
                   />
                   <Label htmlFor="recurring">Повторять каждый месяц</Label>
                 </div>
-                <Button onClick={handleAddReminder} className="w-full">
-                  Сохранить
+                <Button onClick={handleSaveReminder} className="w-full">
+                  {editingId ? "Сохранить изменения" : "Создать"}
                 </Button>
               </div>
             </DialogContent>
@@ -383,17 +429,32 @@ export default function PaymentCalendar() {
                       )}
                     </div>
 
-                    {/* Кнопка удаления доступна только для ручных напоминаний */}
-                    {reminder.type !== 'credit' && reminder.type !== 'rent' && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteReminder(reminder)}
-                        className="text-gray-400 hover:text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {/* Показываем кнопки, если ID начинается с 'manual-' (значит создано руками) */}
+                      {reminder.id.startsWith('manual-') && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEditClick(reminder)}
+                            className="text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                            title="Редактировать"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteReminder(reminder)}
+                            className="text-gray-400 hover:text-red-600 hover:bg-red-50"
+                            title="Удалить"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
