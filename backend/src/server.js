@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
 const morgan = require('morgan');
+const path = require('path');
 const { connectDB } = require('./config/database');
 const { config } = require('./config/env');
 const routes = require('./routes');
@@ -16,7 +17,9 @@ const app = express();
 connectDB();
 
 // Security Middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false // для работы React
+}));
 app.use(mongoSanitize());
 
 // CORS
@@ -49,13 +52,16 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use(`/api/${config.apiVersion}`, routes);
 
-// 404 Handler
-app.use((req, res) => {
-  res.status(404).json({ 
-    success: false, 
-    message: 'Route not found' 
+// ===== SERVE FRONTEND =====
+if (config.env === 'production') {
+  // Статические файлы из build папки
+  app.use(express.static(path.join(__dirname, '../../build')));
+  
+  // Все остальные запросы -> index.html (для React Router)
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../build', 'index.html'));
   });
-});
+}
 
 // Error Handler
 app.use(errorHandler);
