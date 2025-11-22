@@ -23,7 +23,7 @@ router.use('/categories', categoryRoutes);
 router.use('/rent', rentRoutes);
 router.use('/deposits', depositRoutes);
 router.use('/banks', banksRoutes);
-router.use('/utility-types', utilityTypesRoutes);
+router.use('/utilitytypes', utilityTypesRoutes);
 router.use('/monthly-expenses', monthlyExpenseRoutes);
 
 // API info
@@ -41,7 +41,7 @@ router.get('/', (req, res) => {
       deposits: '/deposits',
       banks: '/banks',
       credits: '/credits',
-      utilityTypes: '/utility-types',
+      utilityTypes: '/utilitytypes',
       monthlyExpenses: '/monthly-expenses'
     }
   });
