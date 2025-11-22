@@ -244,6 +244,7 @@ function Profile() {
             <Input 
               id="birthDate"
               type="date"
+              className="date-input"
               value={profile.birthDate}
               onChange={(e) => setProfile({...profile, birthDate: e.target.value})}
             />
