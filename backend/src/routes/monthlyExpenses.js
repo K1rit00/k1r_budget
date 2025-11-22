@@ -9,7 +9,8 @@ const {
   getMonthlyStats,
   getOverdueExpenses,
   updateOverdueStatus,
-  transferRecurringExpenses
+  transferRecurringExpenses,
+  getExpenseTransactionsHistory
 } = require('../controllers/monthlyExpenseController');
 const { protect } = require('../middleware/auth');
 const { validateMonthlyExpense } = require('../middleware/validation');
@@ -21,6 +22,7 @@ router.post('/transfer', transferRecurringExpenses); // Новый маршру�
 router.get('/stats/by-month', getMonthlyStats);
 router.get('/overdue', getOverdueExpenses);
 router.post('/update-overdue', updateOverdueStatus);
+router.get('/transactions/history', getExpenseTransactionsHistory);
 
 router.route('/')
   .get(getMonthlyExpenses)

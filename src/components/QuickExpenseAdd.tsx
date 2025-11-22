@@ -11,9 +11,24 @@ import { toast } from "sonner";
 import { apiService } from "../services/api";
 import type { MonthlyExpense, DepositTransaction } from "../types";
 
+interface ExpenseTransaction {
+  _id: string;
+  amount: number;
+  date: string;
+  description: string;
+  expenseId: {
+    name: string;
+    category?: {
+      name: string;
+      color?: string;
+    }
+  };
+}
+
 function QuickExpenseAdd() {
   const [monthlyExpenses, setMonthlyExpenses] = useState<MonthlyExpense[]>([]);
-  const [transactions, setTransactions] = useState<DepositTransaction[]>([]); // Состояние для транзакций
+  // Меняем тип стейта, если был строгий
+  const [transactions, setTransactions] = useState<ExpenseTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -87,19 +102,15 @@ function QuickExpenseAdd() {
       const startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
       const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
-      // Запрашиваем только списания (withdrawal) за этот месяц
-      const response = await apiService.getDepositTransactions({
-        type: 'withdrawal',
+      // !!! ЗАМЕНА МЕТОДА !!!
+      // Теперь берем историю оплат расходов, а не списаний депозитов
+      const response = await apiService.getExpenseTransactionsHistory({
         startDate,
         endDate
       });
 
-      if (response.success && response.data) {
-        // Сортируем: новые сверху
-        const sorted = (response.data.transactions || response.data).sort((a: DepositTransaction, b: DepositTransaction) =>
-          new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime()
-        );
-        setTransactions(sorted);
+      if (response.success) {
+        setTransactions(response.data);
       }
     } catch (error) {
       console.error("Ошибка загрузки истории:", error);
@@ -163,7 +174,8 @@ function QuickExpenseAdd() {
       const updatePayload = {
         actualAmount: newActualAmount,
         status: newStatus,
-        description: formData.description
+        date: formData.date, // <-- Важно передать дату, чтобы транзакция записалась нужным числом
+        description: formData.description // <-- Передаем описание для транзакции
           ? (selectedExpense.description ? `${selectedExpense.description}\n${formData.description}` : formData.description)
           : selectedExpense.description
       };
@@ -426,27 +438,32 @@ function QuickExpenseAdd() {
             ) : (
               <div className="space-y-3 max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
                 {transactions.map((tx) => (
-                  <div key={tx.id || Math.random().toString()} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-800 animate-in fade-in">
-                    <div className="flex items-center gap-3 min-w-0"> {/* Добавлен min-w-0 */}
-                      <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-full text-red-600 dark:text-red-400">
-                        <TrendingDown className="w-4 h-4" />
+                  <div key={tx._id || Math.random().toString()} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-800 animate-in fade-in">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-full text-blue-600 dark:text-blue-400">
+                        {/* Иконка чека/оплаты вместо графика */}
+                        <CheckCircle2 className="w-4 h-4" />
                       </div>
-                      <div className="overflow-hidden"> {/* Ограничивающий контейнер */}
-                        <p className="font-medium text-sm truncate whitespace-nowrap" title={tx.description}>
-                          {/* Здесь применены truncate и whitespace-nowrap */}
-                          {tx.description || "Списание"}
+                      <div className="overflow-hidden">
+                        <p className="font-medium text-sm truncate whitespace-nowrap">
+                          {/* Выводим Имя расхода, если есть populate, иначе описание */}
+                          {tx.expenseId?.name || tx.description || "Оплата"}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(tx.transactionDate).toLocaleDateString('ru-RU', {
+                          {new Date(tx.date).toLocaleDateString('ru-RU', {
                             day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
                           })}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right shrink-0 ml-2"> {/* shrink-0 гарантирует, что сумма не сожмется */}
+                    <div className="text-right shrink-0 ml-2">
                       <p className="font-semibold text-gray-900 dark:text-gray-100">
                         -{Number(tx.amount).toLocaleString("kk-KZ")} ₸
                       </p>
+                      {/* Можно добавить название категории мелко */}
+                      {tx.expenseId?.category && (
+                        <p className="text-[10px] text-muted-foreground">{tx.expenseId.category.name}</p>
+                      )}
                     </div>
                   </div>
                 ))}

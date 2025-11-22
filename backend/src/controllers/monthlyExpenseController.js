@@ -4,10 +4,45 @@ const Income = require('../models/Income');
 const Deposit = require('../models/Deposit');
 const IncomeUsage = require('../models/IncomeUsage');
 const DepositTransaction = require('../models/DepositTransaction'); 
+const ExpenseTransaction = require('../models/ExpenseTransaction');
 
 // @desc    Получить все ежемесячные расходы
 // @route   GET /api/v1/monthly-expenses
 // @access  Private
+
+// @desc    Получить историю оплат расходов
+// @route   GET /api/v1/monthly-expenses/transactions/history
+// @access  Private
+exports.getExpenseTransactionsHistory = async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+        const query = { userId: req.user.id };
+
+        if (startDate || endDate) {
+            query.date = {};
+            if (startDate) query.date.$gte = new Date(startDate);
+            if (endDate) query.date.$lte = new Date(endDate);
+        }
+
+        const transactions = await ExpenseTransaction.find(query)
+            .populate({
+                path: 'expenseId',
+                select: 'name category',
+                populate: { path: 'category', select: 'name color icon' }
+            })
+            .sort({ date: -1 }); // Сначала новые
+
+        res.status(200).json({
+            success: true,
+            count: transactions.length,
+            data: transactions
+        });
+    } catch (error) {
+        console.error('Error getting expense history:', error);
+        res.status(500).json({ success: false, message: 'Ошибка получения истории', error: error.message });
+    }
+};
+
 exports.getMonthlyExpenses = async (req, res) => {
   try {
     const { startDate, endDate, category, status, limit = 100, page = 1 } = req.query;
@@ -309,38 +344,55 @@ exports.updateMonthlyExpense = async (req, res) => {
     let expense = await MonthlyExpense.findOne({ _id: req.params.id, userId: req.user.id });
     if (!expense) return res.status(404).json({ success: false, message: 'Расход не найден' });
 
-    // === ЛОГИКА СПИСАНИЯ С ДЕПОЗИТА ПРИ ОПЛАТЕ ===
-    // Проверяем, изменилась ли фактическая сумма оплаты
+    // === ЛОГИКА ОПЛАТЫ И ТРАНЗАКЦИЙ ===
     if (req.body.actualAmount !== undefined) {
       const oldActual = expense.actualAmount ? parseFloat(expense.actualAmount) : 0;
       const newActual = parseFloat(req.body.actualAmount);
       const difference = newActual - oldActual;
 
-      // Если сумма увеличилась (мы доплатили), списываем разницу с депозита
+      // Если сумма увеличилась (была оплата)
       if (difference > 0) {
+        let depositTransactionId = null;
+        let paymentSource = 'external';
+
+        // 1. Пробуем списать с депозита (старая логика)
         const depositId = req.body.storageDeposit || expense.storageDeposit;
-        
         if (depositId) {
           const deposit = await Deposit.findOne({ _id: depositId, userId: req.user.id });
           if (deposit) {
-            if (deposit.currentBalance < difference) {
-               return res.status(400).json({ success: false, message: 'На депозите недостаточно средств для оплаты' });
-            }
+            // Если денег хватает, списываем
+            if (deposit.currentBalance >= difference) {
+                deposit.currentBalance -= difference;
+                await deposit.save();
 
-            deposit.currentBalance -= difference;
-            await deposit.save();
-
-            // Создаем транзакцию списания
-            await DepositTransaction.create({
-              userId: req.user.id,
-              depositId: deposit._id,
-              type: 'withdrawal',
-              amount: difference,
-              transactionDate: new Date(),
-              description: `Оплата расхода (частичная/полная): ${expense.name}`
-            });
+                // Создаем транзакцию списания депозита
+                const depTrans = await DepositTransaction.create({
+                  userId: req.user.id,
+                  depositId: deposit._id,
+                  type: 'withdrawal',
+                  amount: difference,
+                  transactionDate: new Date(),
+                  description: `Оплата расхода: ${expense.name}`
+                });
+                
+                depositTransactionId = depTrans._id;
+                paymentSource = 'deposit';
+            } 
+            // Если денег на депозите не хватает, но пользователь все равно вносит оплату 
+            // (значит платит "из кармана"), мы не трогаем депозит, но создаем ExpenseTransaction ниже.
           }
         }
+
+        // 2. ВСЕГДА создаем запись в новой модели ExpenseTransaction
+        await ExpenseTransaction.create({
+            userId: req.user.id,
+            expenseId: expense._id,
+            amount: difference,
+            date: req.body.date || new Date(), // Берем дату из тела запроса или текущую
+            description: req.body.description || `Оплата: ${expense.name}`,
+            paymentSource: paymentSource,
+            relatedDepositTransactionId: depositTransactionId
+        });
       }
     }
 

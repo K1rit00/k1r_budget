@@ -30,22 +30,36 @@ const INITIAL_FORM_STATE = {
 function MonthlyExpenses() {
   const { addNotification } = useAppActions();
   
-  // Данные
+  // --- ДАННЫЕ ---
   const [budgets, setBudgets] = useState<MonthlyBudget[]>([]);
-  const [categories, setCategories] = useState<any[]>([]); // Категории расходов
-  const [incomeCategories, setIncomeCategories] = useState<any[]>([]); // Категории доходов (для отображения в селекте)
-  const [incomes, setIncomes] = useState<any[]>([]); // Доступные доходы
+  const [categories, setCategories] = useState<any[]>([]);
+  const [incomeCategories, setIncomeCategories] = useState<any[]>([]);
+  const [incomes, setIncomes] = useState<any[]>([]);
   const [deposits, setDeposits] = useState<any[]>([]);
   
-  // UI состояние
+  // --- UI СОСТОЯНИЕ ---
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Состояния модальных окон
   const [isExpenseDialogOpen, setIsExpenseDialogOpen] = useState(false);
   const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
+  
+  // Состояние для ЕДИНОГО модального окна оплаты
+  const [paymentModal, setPaymentModal] = useState<{
+    isOpen: boolean;
+    expense: MonthlyExpense | null;
+    budgetId: string;
+  }>({
+    isOpen: false,
+    expense: null,
+    budgetId: ""
+  });
+
   const [editingExpense, setEditingExpense] = useState<MonthlyExpense | null>(null);
   const [selectedBudgetId, setSelectedBudgetId] = useState<string>("");
 
-  // Состояние формы
+  // Состояние формы создания/редактирования
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
 
   // 1. Функция обработки данных
@@ -81,7 +95,7 @@ function MonthlyExpenses() {
         isRecurring: expense.isRecurring,
         status: expense.status,
         description: expense.description,
-        sourceIncome: expense.sourceIncome?._id || expense.sourceIncome?.id || expense.sourceIncome, // ИЗМЕНЕНИЕ
+        sourceIncome: expense.sourceIncome?._id || expense.sourceIncome?.id || expense.sourceIncome,
         storageDeposit: expense.storageDeposit?._id || expense.storageDeposit?.id || expense.storageDeposit
       };
 
@@ -112,7 +126,6 @@ function MonthlyExpenses() {
   const fetchData = useCallback(async () => {
     try {
       setIsLoading(true);
-      // Загружаем доступные доходы (getAvailableIncomes) вместо обычных, чтобы видеть остатки
       const [expensesRes, categoriesRes, incomesRes, depositsRes, incomeCategoriesRes] = await Promise.all([
         apiService.getMonthlyExpenses(),
         apiService.getCategories('expense'),
@@ -231,7 +244,7 @@ function MonthlyExpenses() {
 
   const getItemId = (item: any) => item.id || item._id;
 
-  // Обработчики
+  // --- ОБРАБОТЧИКИ ---
   const handleBudgetSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const formDataInput = new FormData(e.target as HTMLFormElement);
@@ -267,7 +280,6 @@ function MonthlyExpenses() {
     if (isSubmitting) return;
     setIsSubmitting(true);
 
-    // АВТОМАТИЧЕСКИЙ РАСЧЕТ ДАТЫ: ПОСЛЕДНЕЕ ЧИСЛО МЕСЯЦА
     let calculatedDate;
     
     if (selectedBudgetId) {
@@ -319,8 +331,14 @@ function MonthlyExpenses() {
     }
   };
 
-  // ИЗМЕНЕНИЕ: Теперь paymentAmount - это сумма текущего платежа, а не общая сумма.
-  const markExpenseAsPaid = async (budgetId: string, expenseId: string, paymentAmount: number) => {
+  // Функция оплаты
+  const markExpenseAsPaid = async (
+    budgetId: string, 
+    expenseId: string, 
+    paymentAmount: number,
+    paymentDate: string,
+    paymentDescription: string
+  ) => {
     const budget = budgets.find(b => b.id === budgetId);
     const expense = budget?.expenses.find(e => e.id === expenseId);
     
@@ -336,7 +354,9 @@ function MonthlyExpenses() {
     try {
       await apiService.updateMonthlyExpense(expenseId, {
         status: newStatus,
-        actualAmount: newActualAmount // Отправляем новую ОБЩУЮ сумму
+        actualAmount: newActualAmount,
+        date: paymentDate,
+        description: paymentDescription 
       });
       
       addNotification({ 
@@ -369,7 +389,7 @@ function MonthlyExpenses() {
     addNotification({ message: "Бюджет скрыт из списка", type: "info" });
   };
 
-  // Рендер списка расходов
+  // --- RENDER СПИСКА ---
   const renderExpenseList = (expenses: MonthlyExpense[], budgetId: string, showPayAction: boolean = true) => {
     if (expenses.length === 0) {
       return <p className="text-muted-foreground text-center py-8">Нет запланированных расходов</p>;
@@ -385,7 +405,6 @@ function MonthlyExpenses() {
           const actual = expense.actualAmount || 0;
           const remaining = expense.plannedAmount - actual;
           const isLowBalance = remaining > 0 && remaining <= 5000 && expense.status !== 'paid';
-          const defaultPaymentAmount = remaining > 0 ? remaining : expense.plannedAmount; // Значение по умолчанию
 
           return (
             <div key={expense.id} className={`p-4 border rounded-lg ${isOverdue ? 'border-red-300 bg-red-50/50 dark:bg-red-950/20' : ''}`}>
@@ -401,56 +420,20 @@ function MonthlyExpenses() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* КНОПКА ОТКРЫТИЯ МОДАЛЬНОГО ОКНА ОПЛАТЫ */}
                   {showPayAction && expense.status === "planned" && (
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button size="sm" variant="outline">
-                          <CheckCircle className="w-4 h-4 mr-1" />
-                          {isPartial ? "Доплатить" : "Оплатить"}
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-sm">
-                        <DialogHeader>
-                          <DialogTitle>{isPartial ? "Добавить оплату" : "Отметить как оплаченное"}</DialogTitle>
-                        </DialogHeader>
-                        <form onSubmit={(e) => {
-                          e.preventDefault();
-                          const formDataInput = new FormData(e.target as HTMLFormElement);
-                          const amount = parseFloat(formDataInput.get("amount") as string);
-                          // Теперь amount - это сумма текущего платежа
-                          markExpenseAsPaid(budgetId, expense.id, amount);
-                        }}>
-                          <div className="space-y-4">
-                            <div>
-                              <Label htmlFor="amount">Сумма оплаты (₸)</Label> {/* Изменено */}
-                              <Input 
-                                id="amount" 
-                                name="amount" 
-                                type="number" 
-                                step="0.01" 
-                                required 
-                                defaultValue={defaultPaymentAmount}
-                              />
-                              {isPartial && (
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  Уже оплачено: {expense.actualAmount?.toLocaleString("kk-KZ")} ₸. <br/>
-                                  Остаток к оплате: <span className="font-semibold">{remaining.toLocaleString("kk-KZ")} ₸</span>. <br/>
-                                  Введите сумму, которую хотите оплатить сейчас.
-                                </p>
-                              )}
-                              {!isPartial && (
-                                 <p className="text-xs text-muted-foreground mt-1">
-                                    План: {expense.plannedAmount.toLocaleString("kk-KZ")} ₸. Введите сумму оплаты.
-                                 </p>
-                              )}
-                            </div>
-                            <Button type="submit" className="w-full">
-                              Подтвердить
-                            </Button>
-                          </div>
-                        </form>
-                      </DialogContent>
-                    </Dialog>
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => setPaymentModal({
+                        isOpen: true,
+                        expense: expense,
+                        budgetId: budgetId
+                      })}
+                    >
+                      <CheckCircle className="w-4 h-4 mr-1" />
+                      {isPartial ? "Доплатить" : "Оплатить"}
+                    </Button>
                   )}
                   <Button
                     variant="ghost"
@@ -841,6 +824,109 @@ function MonthlyExpenses() {
         </TabsContent>
       </Tabs>
 
+      {/* --- МОДАЛЬНОЕ ОКНО ОПЛАТЫ (ЕДИНОЕ) --- */}
+      <Dialog 
+        open={paymentModal.isOpen} 
+        onOpenChange={(open) => setPaymentModal(prev => ({ ...prev, isOpen: open }))}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {paymentModal.expense?.actualAmount && paymentModal.expense.actualAmount > 0 
+                ? "Добавить оплату" 
+                : "Внести оплату"}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {paymentModal.expense && (
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const formDataInput = new FormData(e.target as HTMLFormElement);
+              const amount = parseFloat(formDataInput.get("amount") as string);
+              const date = formDataInput.get("date") as string;
+              const description = formDataInput.get("description") as string;
+              
+              if (paymentModal.expense) {
+                 await markExpenseAsPaid(
+                   paymentModal.budgetId, 
+                   paymentModal.expense.id, 
+                   amount, 
+                   date, 
+                   description
+                 );
+                 // ЗАКРЫТИЕ ОКНА ПОСЛЕ УСПЕШНОЙ ОПЛАТЫ
+                 setPaymentModal({ isOpen: false, expense: null, budgetId: "" });
+              }
+            }}>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="amount">Сумма оплаты (₸)</Label>
+                  {(() => {
+                     const actual = paymentModal.expense.actualAmount || 0;
+                     const remaining = paymentModal.expense.plannedAmount - actual;
+                     const isPartial = actual > 0 && actual < paymentModal.expense.plannedAmount;
+                     const defaultAmount = remaining > 0 ? remaining : paymentModal.expense.plannedAmount;
+                     
+                     return (
+                       <>
+                        <Input 
+                          id="amount" 
+                          name="amount" 
+                          type="number" 
+                          step="0.01" 
+                          required 
+                          defaultValue={defaultAmount}
+                          className="text-lg font-semibold"
+                        />
+                        {isPartial && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Остаток к оплате: <span className="font-semibold">{remaining.toLocaleString("kk-KZ")} ₸</span>
+                            </p>
+                        )}
+                       </>
+                     );
+                  })()}
+                </div>
+
+                <div>
+                    <Label htmlFor="date">Дата оплаты</Label>
+                    <Input 
+                        id="date" 
+                        name="date" 
+                        type="date" 
+                        className="date-input"
+                        required 
+                        defaultValue={new Date().toISOString().split('T')[0]}
+                    />
+                </div>
+
+                <div>
+                    <Label htmlFor="description">Комментарий</Label>
+                    {(() => {
+                         const actual = paymentModal.expense.actualAmount || 0;
+                         // --- АВТОМАТИЧЕСКОЕ ЗАПОЛНЕНИЕ ---
+                         // Если уже были платежи (actual > 0), то "Частичная оплата"
+                         // Иначе "Полная оплата"
+                         const defaultDesc = actual > 0 ? "Частичная оплата" : "Полная оплата";
+                         
+                         return (
+                            <Input 
+                                id="description" 
+                                name="description" 
+                            />
+                         )
+                    })()}
+                </div>
+                
+                <Button type="submit" className="w-full">
+                  Подтвердить оплату
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* МОДАЛЬНОЕ ОКНО: ДОБАВИТЬ/РЕДАКТИРОВАТЬ РАСХОД */}
       <Dialog open={isExpenseDialogOpen} onOpenChange={setIsExpenseDialogOpen}>
         <DialogContent className="max-w-md">
@@ -905,7 +991,6 @@ function MonthlyExpenses() {
                   <SelectItem value="none">Не указывать</SelectItem>
                   {incomes
                     .filter((income: any) => {
-                      // Показываем доход, если есть доступный остаток или он уже выбран (при редактировании)
                       const isSelected = String(getItemId(income)) === formData.incomeId;
                       return income.availableAmount > 0 || isSelected;
                     })
@@ -913,8 +998,6 @@ function MonthlyExpenses() {
                     .slice(0, 50)
                     .map((income) => {
                       const id = getItemId(income);
-                      
-                      // Определяем название категории дохода для отображения
                       let categoryName = "Доход";
                       if (typeof income.type === 'object' && income.type !== null) {
                         categoryName = income.type.name;
@@ -951,7 +1034,6 @@ function MonthlyExpenses() {
                     .filter(deposit => deposit.status === 'active')
                     .map((deposit) => {
                       const id = getItemId(deposit);
-                      // Приоритет названия депозита
                       const displayName = deposit.name ? `${deposit.name} (${deposit.bankName})` : deposit.bankName;
                       
                       return id ? (
