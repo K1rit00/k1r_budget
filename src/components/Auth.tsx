@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Eye, EyeOff, LogIn, UserPlus, Loader2, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, LogIn, UserPlus, Loader2, AlertCircle, Clock } from "lucide-react"; // Добавил Clock для иконки истечения времени
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -9,11 +9,14 @@ import { Checkbox } from "./ui/checkbox";
 import { apiService } from "../services/api";
 import { toast } from "sonner";
 
+// 1. ИСПРАВЛЕНИЕ: Добавляем sessionExpired в интерфейс
 interface AuthProps {
   onLogin: (user: { email: string; name: string }) => void;
+  sessionExpired?: boolean;
 }
 
-export function Auth({ onLogin }: AuthProps) {
+// 2. ИСПРАВЛЕНИЕ: Деструктурируем sessionExpired из пропсов
+export function Auth({ onLogin, sessionExpired }: AuthProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -45,10 +48,7 @@ export function Auth({ onLogin }: AuthProps) {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Сбрасываем предыдущие ошибки
     setErrors({});
-    
     const newErrors: {[key: string]: string} = {};
 
     if (!loginForm.login) {
@@ -85,7 +85,6 @@ export function Auth({ onLogin }: AuthProps) {
       }
     } catch (error: any) {
       console.error('Login error:', error);
-      
       let errorMessage = "Ошибка при входе";
       
       if (error.response?.data?.message) {
@@ -94,12 +93,7 @@ export function Auth({ onLogin }: AuthProps) {
         errorMessage = error.message;
       }
       
-      // Устанавливаем ошибку в состояние (она останется на экране)
-      setErrors({ 
-        submit: errorMessage 
-      });
-      
-      // Также показываем toast для наглядности
+      setErrors({ submit: errorMessage });
       toast.error(errorMessage, { 
         duration: 5000,
         description: "Проверьте правильность введенных данных"
@@ -111,41 +105,21 @@ export function Auth({ onLogin }: AuthProps) {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Сбрасываем предыдущие ошибки
     setErrors({});
-    
     const newErrors: {[key: string]: string} = {};
 
-    if (!registerForm.firstName) {
-      newErrors.firstName = "Введите имя";
-    }
+    if (!registerForm.firstName) newErrors.firstName = "Введите имя";
+    if (!registerForm.lastName) newErrors.lastName = "Введите фамилию";
+    if (!registerForm.login) newErrors.login = "Введите логин";
+    else if (!validateLogin(registerForm.login)) newErrors.login = "Логин должен содержать минимум 3 символа";
 
-    if (!registerForm.lastName) {
-      newErrors.lastName = "Введите фамилию";
-    }
+    if (!registerForm.password) newErrors.password = "Введите пароль";
+    else if (!validatePassword(registerForm.password)) newErrors.password = "Пароль должен содержать минимум 6 символов";
 
-    if (!registerForm.login) {
-      newErrors.login = "Введите логин";
-    } else if (!validateLogin(registerForm.login)) {
-      newErrors.login = "Логин должен содержать минимум 3 символа";
-    }
+    if (!registerForm.confirmPassword) newErrors.confirmPassword = "Подтвердите пароль";
+    else if (registerForm.password !== registerForm.confirmPassword) newErrors.confirmPassword = "Пароли не совпадают";
 
-    if (!registerForm.password) {
-      newErrors.password = "Введите пароль";
-    } else if (!validatePassword(registerForm.password)) {
-      newErrors.password = "Пароль должен содержать минимум 6 символов";
-    }
-
-    if (!registerForm.confirmPassword) {
-      newErrors.confirmPassword = "Подтвердите пароль";
-    } else if (registerForm.password !== registerForm.confirmPassword) {
-      newErrors.confirmPassword = "Пароли не совпадают";
-    }
-
-    if (!registerForm.agreeToTerms) {
-      newErrors.agreeToTerms = "Необходимо согласие с условиями";
-    }
+    if (!registerForm.agreeToTerms) newErrors.agreeToTerms = "Необходимо согласие с условиями";
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -173,7 +147,6 @@ export function Auth({ onLogin }: AuthProps) {
       }
     } catch (error: any) {
       console.error('Registration error:', error);
-      
       let errorMessage = "Ошибка при регистрации";
       
       if (error.response?.data?.message) {
@@ -182,11 +155,7 @@ export function Auth({ onLogin }: AuthProps) {
         errorMessage = error.message;
       }
       
-      // Устанавливаем ошибку в состояние
-      setErrors({ 
-        submit: errorMessage 
-      });
-      
+      setErrors({ submit: errorMessage });
       toast.error(errorMessage, { 
         duration: 5000,
         description: "Попробуйте использовать другой логин или проверьте данные"
@@ -211,6 +180,24 @@ export function Auth({ onLogin }: AuthProps) {
             </TabsList>
 
             <TabsContent value="login" className="space-y-4">
+              
+              {/* 3. ИСПРАВЛЕНИЕ: Визуальное уведомление об истечении сессии */}
+              {sessionExpired && (
+                <div className="p-3 mb-4 rounded-md bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="flex items-start gap-3">
+                    <Clock className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400">
+                        Сессия истекла
+                      </p>
+                      <p className="text-xs text-yellow-600/90 dark:text-yellow-400/90 mt-1">
+                        В целях безопасности, пожалуйста, войдите снова.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
                   <Label htmlFor="login-login">Логин</Label>
@@ -220,7 +207,6 @@ export function Auth({ onLogin }: AuthProps) {
                     value={loginForm.login}
                     onChange={(e) => {
                       setLoginForm({...loginForm, login: e.target.value});
-                      // Очищаем ошибку при вводе
                       if (errors.login) {
                         setErrors(prev => {
                           const newErrors = {...prev};
@@ -250,7 +236,6 @@ export function Auth({ onLogin }: AuthProps) {
                       value={loginForm.password}
                       onChange={(e) => {
                         setLoginForm({...loginForm, password: e.target.value});
-                        // Очищаем ошибку при вводе
                         if (errors.password) {
                           setErrors(prev => {
                             const newErrors = {...prev};
@@ -314,6 +299,7 @@ export function Auth({ onLogin }: AuthProps) {
             </TabsContent>
 
             <TabsContent value="register" className="space-y-4">
+               {/* Форма регистрации (без изменений) */}
               <form onSubmit={handleRegister} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>

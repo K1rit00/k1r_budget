@@ -6,17 +6,16 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { toast } from "sonner";
-import { LogOut, Clock } from "lucide-react";
+import { LogOut, Clock, BellRing } from "lucide-react"; // Добавили иконку BellRing
 import { AppProvider, useAppContext, useAppActions } from "./contexts/AppContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingFallback } from "./components/common/LoadingFallback";
 import { NotificationCenter } from "./components/common/NotificationCenter";
-// Импортируем сам инстанс api (default export) вместе с сервисом
 import api, { apiService } from "./services/api"; 
 import { GlobalLoader, FullScreenLoaderUI } from "./services/GlobalLoader";
 import type { User } from "./types";
 
-// Локальные константы
+// ... (Оставляем константы ROUTES, PAGE_TITLES, PAGE_DESCRIPTIONS без изменений) ...
 const ROUTES = {
   DASHBOARD: "dashboard",
   QUICK_EXPENSES: "quick-expenses", 
@@ -77,11 +76,95 @@ function AppContent() {
   const { setUser, setCurrentView, setGlobalLoading } = useAppActions();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
-
-  // Используем Ref для счетчика, чтобы он был доступен актуальным в обоих useEffect
   const requestCountRef = useRef(0);
 
-  // 1. LOGIC: Интерсепторы (Счетчик активных запросов)
+  // --- НОВАЯ ФУНКЦИЯ: Проверка напоминаний на сегодня ---
+  const checkTodayReminders = async () => {
+    try {
+      // Параллельно запрашиваем данные (тихо, без блокировки UI если возможно)
+      const [creditsRes, rentsRes, remindersRes] = await Promise.all([
+        apiService.getCredits({ status: 'active' }),
+        apiService.getRentProperties({ status: 'active' }),
+        apiService.getReminders()
+      ]);
+
+      const credits = creditsRes.data || [];
+      const rents = rentsRes.data || [];
+      const manualReminders = remindersRes.data || [];
+
+      const today = new Date();
+      const currentDay = today.getDate();
+      const currentMonth = today.getMonth();
+      const currentYear = today.getFullYear();
+
+      let todayCount = 0;
+
+      // 1. Проверка кредитов (упрощенная логика календаря)
+      credits.forEach((credit: any) => {
+        // Если дата платежа больше кол-ва дней в месяце, то платеж в последний день
+        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+        const paymentDay = Math.min(credit.monthlyPaymentDate, daysInMonth);
+        
+        const startDate = new Date(credit.startDate);
+        startDate.setHours(0,0,0,0);
+        
+        if (paymentDay === currentDay && today >= startDate) {
+          todayCount++;
+        }
+      });
+
+      // 2. Проверка аренды (обычно 1 число)
+      rents.forEach((rent: any) => {
+        if (currentDay === 1) {
+           const startDate = new Date(rent.startDate);
+           startDate.setHours(0,0,0,0);
+           // Проверяем активность
+           if (today >= startDate && (!rent.endDate || new Date(rent.endDate) >= today)) {
+             todayCount++;
+           }
+        }
+      });
+
+      // 3. Ручные напоминания
+      manualReminders.forEach((reminder: any) => {
+        const remDate = new Date(reminder.date);
+        
+        if (reminder.isRecurring) {
+           const targetDay = reminder.dayOfMonth || remDate.getDate();
+           // Коррекция на конец месяца
+           const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+           const actualDay = Math.min(targetDay, daysInMonth);
+           
+           if (actualDay === currentDay) todayCount++;
+        } else {
+           if (remDate.getDate() === currentDay && 
+               remDate.getMonth() === currentMonth && 
+               remDate.getFullYear() === currentYear) {
+             todayCount++;
+           }
+        }
+      });
+
+      // Если есть платежи — отправляем уведомление
+      if (todayCount > 0) {
+        toast(`На сегодня запланировано платежей: ${todayCount}`, {
+          description: "Не забудьте проверить календарь платежей",
+          icon: <BellRing className="w-5 h-5 text-blue-500" />,
+          duration: 8000, // Показываем подольше
+          action: {
+            label: "Смотреть",
+            onClick: () => setCurrentView(ROUTES.CALENDAR)
+          }
+        });
+      }
+
+    } catch (error) {
+      console.error("Ошибка при проверке ежедневных напоминаний", error);
+    }
+  };
+  // ------------------------------------------------------
+
+  // 1. LOGIC: Интерсепторы
   useEffect(() => {
     const reqInterceptor = api.interceptors.request.use(
       (config) => {
@@ -124,14 +207,11 @@ function AppContent() {
     };
   }, [setGlobalLoading]);
 
-  // 2. LOGIC: Страховка от вечной загрузки (Safety Timer)
-  // Исправляет проблему, когда при переходе на вкладку с кэшированными данными лоадер не исчезает.
+  // 2. LOGIC: Страховка от вечной загрузки
   useEffect(() => {
     let safetyTimer: NodeJS.Timeout;
 
     if (state.globalLoading) {
-      // Даем компоненту 500мс на то, чтобы инициировать сетевой запрос.
-      // Если запроса не будет (счетчик останется 0) — принудительно выключаем лоадер.
       safetyTimer = setTimeout(() => {
         if (requestCountRef.current === 0) {
           setGlobalLoading(false);
@@ -157,6 +237,8 @@ function AppContent() {
           const savedUser = await apiService.getSavedUser();
           if (savedUser) {
             setUser(savedUser);
+            // ВЫЗОВ ПРОВЕРКИ НАПОМИНАНИЙ (при перезагрузке страницы)
+            checkTodayReminders(); 
           }
         }
       } catch (error) {
@@ -169,40 +251,34 @@ function AppContent() {
     checkAuth();
   }, []);
 
-  // Функция для обработки истечения сессии
-  const handleSessionExpiration = () => {
-    console.log('Session expired - logging out user');
-    
-    toast.error('Ваша сессия истекла', {
-      description: 'Пожалуйста, войдите снова для продолжения работы',
-      icon: <Clock className="w-5 h-5" />,
-      duration: 5000,
-    });
-    
-    setSessionExpired(true);
-    setUser(null);
-    setCurrentView('dashboard');
-  };
-
   // Слушаем событие истечения сессии
   useEffect(() => {
-    window.addEventListener('session-expired', handleSessionExpiration);
+    const handleSessionExpiration = () => {
+      console.log('Session expired - logging out user');
+      toast.error('Ваша сессия истекла', {
+        description: 'Пожалуйста, войдите снова для продолжения работы',
+        icon: <Clock className="w-5 h-5" />,
+        duration: 5000,
+      });
+      setSessionExpired(true);
+      setUser(null);
+      setCurrentView('dashboard');
+    };
 
+    window.addEventListener('session-expired', handleSessionExpiration);
     return () => {
       window.removeEventListener('session-expired', handleSessionExpiration);
     };
   }, []);
 
-  // Автоматическая проверка активности каждую минуту
+  // Автоматическая проверка активности
   useEffect(() => {
     if (!state.user) return;
-
     const checkActivity = setInterval(() => {
       if (!apiService.isAuthenticated()) {
         window.dispatchEvent(new Event('session-expired'));
       }
     }, 1 * 60 * 1000);
-
     return () => clearInterval(checkActivity);
   }, [state.user]);
 
@@ -214,6 +290,9 @@ function AppContent() {
       description: `Вы успешно вошли в систему`,
       duration: 3000
     });
+
+    // ВЫЗОВ ПРОВЕРКИ НАПОМИНАНИЙ (при явном входе через форму)
+    checkTodayReminders();
   };
 
   const handleLogout = async () => {
@@ -229,41 +308,28 @@ function AppContent() {
     }
   };
 
-  // Мемоизируем компоненты
   const renderContent = useMemo(() => {
+    // ... (код renderContent без изменений) ...
     const currentRoute = state.currentView || 'dashboard';
     
     const getComponent = () => {
       switch (currentRoute) {
-        case 'dashboard':
-          return <Dashboard />;
-        case 'quick-expenses':
-          return <QuickExpenseAdd />;
-        case 'calendar':
-          return <PaymentCalendar />;
-        case 'profile':
-          return <Profile />;
-        case 'references':
-          return <References />;
-        case 'income':
-          return <Income />;
-        case 'credits':
-          return <Credits />;
-        case 'rent':
-          return <Rent />;
-        case 'utilities':
-          return <Utilities />;
-        case 'monthly':
-          return <MonthlyExpenses />;
-        case 'deposits':
-          return <Deposits />;
-        default:
-          return <Dashboard />;
+        case 'dashboard': return <Dashboard />;
+        case 'quick-expenses': return <QuickExpenseAdd />;
+        case 'calendar': return <PaymentCalendar />;
+        case 'profile': return <Profile />;
+        case 'references': return <References />;
+        case 'income': return <Income />;
+        case 'credits': return <Credits />;
+        case 'rent': return <Rent />;
+        case 'utilities': return <Utilities />;
+        case 'monthly': return <MonthlyExpenses />;
+        case 'deposits': return <Deposits />;
+        default: return <Dashboard />;
       }
     };
 
     return (
-      // FullScreenLoaderUI через Portal гарантированно перекроет всё
       <Suspense fallback={<FullScreenLoaderUI message="Загрузка раздела..." />}>
         <ErrorBoundary>
           {getComponent()}
@@ -285,12 +351,10 @@ function AppContent() {
     return description || "Добро пожаловать в систему учёта бюджета";
   }, [state.currentView, state.user]);
 
-  // Показываем загрузку пока проверяем авторизацию
   if (isCheckingAuth) {
     return <LoadingFallback type="spinner" />;
   }
 
-  // Если пользователь не авторизован, показываем форму входа
   if (!state.user) {
     return (
       <Auth 
@@ -302,9 +366,7 @@ function AppContent() {
 
   return (
     <SidebarProvider>
-      {/* Глобальный блокировщик интерфейса (Data Fetching) */}
       <GlobalLoader />
-
       <div className="flex h-screen w-full">
         <AppSidebar currentView={state.currentView} onViewChange={setCurrentView} />
         <SidebarInset className="flex-1">

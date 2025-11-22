@@ -11,6 +11,7 @@ const banksRoutes = require('./banks');
 const utilityTypesRoutes = require('./utilityTypes');
 const creditRoutes = require('./credit');
 const monthlyExpenseRoutes = require('./monthlyExpenses');
+const reminders = require('./reminders');
 
 // Credit routes
 router.use('/credits', creditRoutes);
@@ -25,6 +26,7 @@ router.use('/deposits', depositRoutes);
 router.use('/banks', banksRoutes);
 router.use('/utilitytypes', utilityTypesRoutes);
 router.use('/monthly-expenses', monthlyExpenseRoutes);
+router.use('/reminders', reminders);
 
 // API info
 router.get('/', (req, res) => {
@@ -42,7 +44,8 @@ router.get('/', (req, res) => {
       banks: '/banks',
       credits: '/credits',
       utilityTypes: '/utilitytypes',
-      monthlyExpenses: '/monthly-expenses'
+      monthlyExpenses: '/monthly-expenses',
+      reminders: '/reminders'
     }
   });
 });

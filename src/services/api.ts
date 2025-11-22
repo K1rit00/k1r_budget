@@ -737,6 +737,29 @@ export const apiService = {
     return response.data;
   },
 
+  // Payment Reminders (Ручные напоминания)
+  getReminders: async () => {
+    const response = await api.get('/reminders');
+    return response.data;
+  },
+
+  createReminder: async (data: {
+    title: string;
+    amount: number;
+    date: string; // ISO string
+    type: string;
+    description?: string;
+    isRecurring: boolean;
+  }) => {
+    const response = await api.post('/reminders', data);
+    return response.data;
+  },
+
+  deleteReminder: async (id: string) => {
+    const response = await api.delete(`/reminders/${id}`);
+    return response.data;
+  },
+
 };
 
 export default api;
