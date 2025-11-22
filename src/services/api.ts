@@ -380,8 +380,8 @@ export const apiService = {
   },
 
   // Monthly Expenses
-  getMonthlyExpenses: async () => {
-    const response = await api.get('/monthly-expenses');
+getMonthlyExpenses: async (params?: any) => { 
+    const response = await api.get('/monthly-expenses', { params });
     return response.data;
   },
 

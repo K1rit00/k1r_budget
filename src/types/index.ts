@@ -195,7 +195,9 @@ export interface UtilityReading {
 // Типы для ежемесячных трат
 export interface MonthlyExpense {
   id: string;
+  _id?: string; // <--- Добавлено, так как вы используете expense.id || expense._id
   categoryId: string;
+  category?: Category; // <--- Добавлено, так как вы обращаетесь к expense.category.name
   name: string;
   plannedAmount: number;
   actualAmount?: number;
