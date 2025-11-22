@@ -140,8 +140,20 @@ export const apiService = {
 
   // Update User Profile
   updateProfile: async (data: any) => {
-    console.log('Sending data to update:', data); // Проверка, что уходит с фронта
     const response = await api.put('/auth/profile', data);
+    return response.data;
+  },
+
+  changePassword: async (data: { currentPassword: string; newPassword: string }) => {
+    const response = await api.put('/auth/password', data);
+
+    // Обновляем токены если они вернулись
+    if (response.data.data?.tokens) {
+      const { accessToken, refreshToken } = response.data.data.tokens;
+      localStorage.setItem('accessToken', accessToken);
+      localStorage.setItem('refreshToken', refreshToken);
+    }
+
     return response.data;
   },
 

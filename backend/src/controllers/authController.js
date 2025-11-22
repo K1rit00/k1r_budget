@@ -254,7 +254,11 @@ exports.getMe = async (req, res) => {
           login: user.login,
           fullName: user.fullName,
           currency: user.currency,
-          lastLogin: user.lastLogin
+          lastLogin: user.lastLogin,
+          // Добавляем недостающие поля:
+          phone: user.phone,
+          birthDate: user.birthDate,
+          settings: user.settings
         }
       }
     });
@@ -266,11 +270,92 @@ exports.getMe = async (req, res) => {
   }
 };
 
+// @desc    Change password
+// @route   PUT /api/v1/auth/password
+// @access  Private
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    // Валидация
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Укажите текущий и новый пароль'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Новый пароль должен содержать минимум 6 символов'
+      });
+    }
+
+    // Получаем пользователя с паролем
+    const user = await User.findById(req.user.id).select('+password');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Пользователь не найден'
+      });
+    }
+
+    // Проверяем текущий пароль
+    const isMatch = await user.comparePassword(currentPassword);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: 'Неверный текущий пароль'
+      });
+    }
+
+    // Проверяем, что новый пароль отличается от текущего
+    const isSamePassword = await user.comparePassword(newPassword);
+    if (isSamePassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Новый пароль должен отличаться от текущего'
+      });
+    }
+
+    // Устанавливаем новый пароль (хеширование в pre-save hook)
+    user.password = newPassword;
+    await user.save();
+
+    // Генерируем новые токены для безопасности
+    const accessToken = user.generateAuthToken();
+    const refreshToken = user.generateRefreshToken();
+
+    user.refreshToken = refreshToken;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Пароль успешно изменен',
+      data: {
+        tokens: {
+          accessToken,
+          refreshToken
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Ошибка при смене пароля',
+      error: error.message
+    });
+  }
+};
+
 
 // Update User Profile
 exports.updateProfile = async (req, res) => {
   try {
-    console.log('Update profile body:', req.body); // 1. Лог для отладки входящих данных
 
     const { 
       firstName, 
@@ -314,8 +399,6 @@ exports.updateProfile = async (req, res) => {
 
     // Сохраняем
     const updatedUser = await user.save();
-    console.log('User saved successfully:', updatedUser); // 2. Лог успешного сохранения
-
     res.status(200).json({
       success: true,
       data: updatedUser

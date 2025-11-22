@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { User, Shield, Palette, Key, Sun, Moon, Monitor } from "lucide-react";
+import { User, Shield, Palette, Key, Sun, Moon, Monitor, Eye, EyeOff, Check } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -24,11 +24,26 @@ function Profile() {
     birthDate: "",
   });
 
+  // Password State
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: ""
+  });
+  const [showPasswords, setShowPasswords] = useState({
+    current: false,
+    new: false,
+    confirm: false
+  });
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
   // Settings State
   const [settings, setSettings] = useState({
     privacy: {
       hideAmounts: false,
-      twoFactor: false // Placeholder
+      twoFactor: false
     },
     appearance: {
       currency: "KZT",
@@ -45,7 +60,6 @@ function Profile() {
         if (response.success) {
           const userData = response.data.user;
           
-          // Populate Personal Info
           setProfile({
             firstName: userData.firstName || "",
             lastName: userData.lastName || "",
@@ -54,7 +68,6 @@ function Profile() {
             birthDate: userData.birthDate ? userData.birthDate.split('T')[0] : "",
           });
 
-          // Populate Settings
           const userSettings = userData.settings || {};
           
           setSettings(prev => ({
@@ -70,7 +83,6 @@ function Profile() {
             }
           }));
 
-          // Sync local theme with DB theme on initial load
           if (userSettings.theme && userSettings.theme !== theme) {
              setTheme(userSettings.theme);
           }
@@ -86,7 +98,6 @@ function Profile() {
   }, []);
 
   // --- Save Handlers ---
-
   const handleSavePersonalInfo = async () => {
     setIsSaving(true);
     try {
@@ -106,6 +117,57 @@ function Profile() {
     }
   };
 
+  const handleChangePassword = async () => {
+    setPasswordError("");
+    setPasswordSuccess("");
+
+    // Валидация на фронте
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      setPasswordError("Заполните все поля");
+      return;
+    }
+
+    if (passwordData.newPassword.length < 6) {
+      setPasswordError("Новый пароль должен содержать минимум 6 символов");
+      return;
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordError("Пароли не совпадают");
+      return;
+    }
+
+    if (passwordData.currentPassword === passwordData.newPassword) {
+      setPasswordError("Новый пароль должен отличаться от текущего");
+      return;
+    }
+
+    setIsChangingPassword(true);
+
+    try {
+      await apiService.changePassword({
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword
+      });
+
+      setPasswordSuccess("Пароль успешно изменен!");
+      setPasswordData({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: ""
+      });
+
+      // Очищаем сообщение об успехе через 3 секунды
+      setTimeout(() => setPasswordSuccess(""), 3000);
+    } catch (error: any) {
+      console.error("Error changing password:", error);
+      const message = error.response?.data?.message || "Ошибка при смене пароля";
+      setPasswordError(message);
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   const handleSaveSettings = async () => {
     setIsSaving(true);
     try {
@@ -116,10 +178,7 @@ function Profile() {
         hideAmounts: settings.privacy.hideAmounts
       };
 
-      await apiService.updateProfile({
-        settings: settingsToSave
-      });
-      
+      await apiService.updateProfile({ settings: settingsToSave });
       alert("Настройки успешно сохранены!");
     } catch (error: any) {
       console.error("Error saving settings:", error);
@@ -139,7 +198,6 @@ function Profile() {
   };
 
   // --- Components ---
-
   const PersonalInfo = () => (
     <div className="space-y-6">
       <Card className="rounded-2xl">
@@ -168,17 +226,10 @@ function Profile() {
               />
             </div>
           </div>
-
           <div>
             <Label htmlFor="email">Логин / Email</Label>
-            <Input 
-              id="email"
-              value={profile.email}
-              disabled 
-              className="bg-muted"
-            />
+            <Input id="email" value={profile.email} disabled className="bg-muted" />
           </div>
-
           <div>
             <Label htmlFor="phone">Телефон</Label>
             <Input 
@@ -188,7 +239,6 @@ function Profile() {
               onChange={(e) => setProfile({...profile, phone: e.target.value})}
             />
           </div>
-
           <div>
             <Label htmlFor="birthDate">Дата рождения</Label>
             <Input 
@@ -198,12 +248,7 @@ function Profile() {
               onChange={(e) => setProfile({...profile, birthDate: e.target.value})}
             />
           </div>
-
-          <Button 
-            className="w-full" 
-            onClick={handleSavePersonalInfo}
-            disabled={isSaving}
-          >
+          <Button className="w-full" onClick={handleSavePersonalInfo} disabled={isSaving}>
             {isSaving ? "Сохранение..." : "Сохранить изменения"}
           </Button>
         </CardContent>
@@ -213,28 +258,99 @@ function Profile() {
 
   const SecuritySettings = () => (
     <div className="space-y-6">
-      <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-sm text-yellow-800 dark:text-yellow-200 mb-4">
-        Раздел безопасности временно недоступен для редактирования.
-      </div>
-
-      <Card className="rounded-2xl opacity-75 pointer-events-none">
+      {/* Смена пароля */}
+      <Card className="rounded-2xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Key className="w-5 h-5" />
             Смена пароля
           </CardTitle>
         </CardHeader>
-        <CardContent>
-             <div className="space-y-4">
-                <Label>Текущий пароль</Label>
-                <Input type="password" disabled />
-                <Label>Новый пароль</Label>
-                <Input type="password" disabled />
-                <Button disabled className="w-full">Изменить пароль</Button>
-             </div>
+        <CardContent className="space-y-4">
+          {passwordError && (
+            <div className="p-3 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
+              {passwordError}
+            </div>
+          )}
+          
+          {passwordSuccess && (
+            <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm text-green-600 dark:text-green-400 flex items-center gap-2">
+              <Check className="w-4 h-4" />
+              {passwordSuccess}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="currentPassword">Текущий пароль</Label>
+            <div className="relative">
+              <Input 
+                id="currentPassword"
+                type={showPasswords.current ? "text" : "password"}
+                value={passwordData.currentPassword}
+                onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})}
+                placeholder="Введите текущий пароль"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPasswords({...showPasswords, current: !showPasswords.current})}
+              >
+                {showPasswords.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="newPassword">Новый пароль</Label>
+            <div className="relative">
+              <Input 
+                id="newPassword"
+                type={showPasswords.new ? "text" : "password"}
+                value={passwordData.newPassword}
+                onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
+                placeholder="Минимум 6 символов"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPasswords({...showPasswords, new: !showPasswords.new})}
+              >
+                {showPasswords.new ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword">Подтвердите новый пароль</Label>
+            <div className="relative">
+              <Input 
+                id="confirmPassword"
+                type={showPasswords.confirm ? "text" : "password"}
+                value={passwordData.confirmPassword}
+                onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
+                placeholder="Повторите новый пароль"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPasswords({...showPasswords, confirm: !showPasswords.confirm})}
+              >
+                {showPasswords.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <Button 
+            className="w-full" 
+            onClick={handleChangePassword}
+            disabled={isChangingPassword}
+          >
+            {isChangingPassword ? "Изменение..." : "Изменить пароль"}
+          </Button>
         </CardContent>
       </Card>
 
+      {/* Приватность */}
       <Card className="rounded-2xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -243,25 +359,33 @@ function Profile() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between opacity-50">
-              <div>
-                <p className="font-medium">Двухфакторная аутентификация</p>
-                <p className="text-sm text-muted-foreground">Дополнительная защита аккаунта (Скоро)</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary">Скоро</Badge>
-                <Switch disabled checked={false} />
-              </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Скрывать суммы</p>
+              <p className="text-sm text-muted-foreground">Заменяет суммы на ***</p>
+            </div>
+            <Switch 
+              checked={settings.privacy.hideAmounts}
+              onCheckedChange={(checked) => setSettings(prev => ({
+                ...prev,
+                privacy: { ...prev.privacy, hideAmounts: checked }
+              }))}
+            />
+          </div>
+
+          <div className="flex items-center justify-between opacity-50">
+            <div>
+              <p className="font-medium">Двухфакторная аутентификация</p>
+              <p className="text-sm text-muted-foreground">Дополнительная защита (Скоро)</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">Скоро</Badge>
+              <Switch disabled checked={false} />
             </div>
           </div>
           
-          <Button 
-            className="w-full mt-4" 
-            onClick={handleSaveSettings}
-            disabled={isSaving}
-          >
-            {isSaving ? "Сохранение..." : "Сохранить настройки приватности"}
+          <Button className="w-full" onClick={handleSaveSettings} disabled={isSaving}>
+            {isSaving ? "Сохранение..." : "Сохранить настройки"}
           </Button>
         </CardContent>
       </Card>
@@ -269,24 +393,6 @@ function Profile() {
   );
 
   const AppearanceSettings = () => {
-    const getThemeIcon = (themeValue: string) => {
-      switch(themeValue) {
-        case "light": return <Sun className="w-4 h-4" />;
-        case "dark": return <Moon className="w-4 h-4" />;
-        case "system": return <Monitor className="w-4 h-4" />;
-        default: return <Monitor className="w-4 h-4" />;
-      }
-    };
-
-    const getThemeLabel = (themeValue: string) => {
-      switch(themeValue) {
-        case "light": return "Светлая";
-        case "dark": return "Темная";
-        case "system": return "Системная";
-        default: return "Системная";
-      }
-    };
-
     const currentTheme = settings.appearance.theme;
 
     return (
@@ -302,92 +408,34 @@ function Profile() {
             <div className="space-y-3">
               <Label>Тема оформления</Label>
               <div className="grid grid-cols-1 gap-3">
-                {/* Light Theme */}
-                <div 
-                  className={`border-2 rounded-xl p-4 cursor-pointer transition-all hover:shadow-md ${
-                      currentTheme === "light" 
-                      ? "border-primary bg-primary/5 shadow-sm" 
-                      : "border-border hover:border-muted-foreground"
-                  }`}
-                  onClick={() => handleThemeChange("light")}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-gradient-to-br from-yellow-100 to-orange-100 rounded-lg flex items-center justify-center">
-                      <Sun className="w-5 h-5 text-yellow-600" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium">Светлая тема</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                       {currentTheme === "light" && <div className="w-2 h-2 bg-primary rounded-full" />}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dark Theme */}
-                <div 
-                  className={`border-2 rounded-xl p-4 cursor-pointer transition-all hover:shadow-md ${
-                      currentTheme === "dark" 
-                      ? "border-primary bg-primary/5 shadow-sm" 
-                      : "border-border hover:border-muted-foreground"
-                  }`}
-                  onClick={() => handleThemeChange("dark")}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-900 to-purple-900 rounded-lg flex items-center justify-center">
-                      <Moon className="w-5 h-5 text-blue-200" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium">Темная тема</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                       {currentTheme === "dark" && <div className="w-2 h-2 bg-primary rounded-full" />}
+                {[
+                  { value: "light", label: "Светлая тема", icon: Sun, gradient: "from-yellow-100 to-orange-100", iconColor: "text-yellow-600" },
+                  { value: "dark", label: "Темная тема", icon: Moon, gradient: "from-blue-900 to-purple-900", iconColor: "text-blue-200" },
+                  { value: "system", label: "Системная тема", icon: Monitor, gradient: "from-purple-100 to-pink-100 dark:from-purple-900 dark:to-pink-900", iconColor: "text-purple-600 dark:text-purple-300" }
+                ].map(({ value, label, icon: Icon, gradient, iconColor }) => (
+                  <div 
+                    key={value}
+                    className={`border-2 rounded-xl p-4 cursor-pointer transition-all hover:shadow-md ${
+                      currentTheme === value 
+                        ? "border-primary bg-primary/5 shadow-sm" 
+                        : "border-border hover:border-muted-foreground"
+                    }`}
+                    onClick={() => handleThemeChange(value as "light" | "dark" | "system")}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 bg-gradient-to-br ${gradient} rounded-lg flex items-center justify-center`}>
+                        <Icon className={`w-5 h-5 ${iconColor}`} />
+                      </div>
+                      <p className="font-medium flex-1">{label}</p>
+                      {currentTheme === value && <div className="w-2 h-2 bg-primary rounded-full" />}
                     </div>
                   </div>
-                </div>
-
-                {/* System Theme */}
-                <div 
-                  className={`border-2 rounded-xl p-4 cursor-pointer transition-all hover:shadow-md ${
-                      currentTheme === "system" 
-                      ? "border-primary bg-primary/5 shadow-sm" 
-                      : "border-border hover:border-muted-foreground"
-                  }`}
-                  onClick={() => handleThemeChange("system")}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900 dark:to-pink-900 rounded-lg flex items-center justify-center">
-                      <Monitor className="w-5 h-5 text-purple-600 dark:text-purple-300" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium">Системная тема</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                       {currentTheme === "system" && <div className="w-2 h-2 bg-primary rounded-full" />}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Current Active Info */}
-              <div className="space-y-3 pt-2 border-t">
-                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                  <div className="w-8 h-8 bg-gradient-to-br from-green-100 to-blue-100 dark:from-green-900 dark:to-blue-900 rounded-lg flex items-center justify-center">
-                    {getThemeIcon(currentTheme)}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Выбрано: {getThemeLabel(currentTheme)}</p>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
-            <Button 
-              className="w-full" 
-              onClick={handleSaveSettings}
-              disabled={isSaving}
-            >
-              {isSaving ? "Сохранение..." : "Сохранить настройки внешнего вида"}
+            <Button className="w-full" onClick={handleSaveSettings} disabled={isSaving}>
+              {isSaving ? "Сохранение..." : "Сохранить настройки"}
             </Button>
           </CardContent>
         </Card>
@@ -407,18 +455,9 @@ function Profile() {
           <TabsTrigger value="security">Безопасность</TabsTrigger>
           <TabsTrigger value="appearance">Внешний вид</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="personal">
-          <PersonalInfo />
-        </TabsContent>
-
-        <TabsContent value="security">
-          <SecuritySettings />
-        </TabsContent>
-
-        <TabsContent value="appearance">
-          <AppearanceSettings />
-        </TabsContent>
+        <TabsContent value="personal"><PersonalInfo /></TabsContent>
+        <TabsContent value="security"><SecuritySettings /></TabsContent>
+        <TabsContent value="appearance"><AppearanceSettings /></TabsContent>
       </Tabs>
     </div>
   );
