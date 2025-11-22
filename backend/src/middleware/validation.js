@@ -728,6 +728,63 @@ exports.validateUtilityType = (req, res, next) => {
   next();
 };
 
+// Validate User Profile Update
+exports.validateUserUpdate = (req, res, next) => {
+  const { firstName, lastName, phone, birthDate, settings } = req.body;
+  const errors = [];
+
+  // Validate First Name
+  if (firstName !== undefined) {
+    if (firstName.trim() === '') {
+      errors.push('Имя не может быть пустым');
+    } else if (firstName.length > 50) {
+      errors.push('Имя не может быть длиннее 50 символов');
+    }
+  }
+
+  // Validate Last Name
+  if (lastName !== undefined) {
+    if (lastName.trim() === '') {
+      errors.push('Фамилия не может быть пустой');
+    } else if (lastName.length > 50) {
+      errors.push('Фамилия не может быть длиннее 50 символов');
+    }
+  }
+
+  // Validate Phone
+  if (phone && phone.length > 20) {
+    errors.push('Телефон не может быть длиннее 20 символов');
+  }
+
+  // Validate Birth Date
+  if (birthDate) {
+    const date = new Date(birthDate);
+    if (isNaN(date.getTime())) {
+      errors.push('Некорректная дата рождения');
+    }
+  }
+
+  // Validate Settings
+  if (settings) {
+    if (settings.theme && !['light', 'dark', 'system'].includes(settings.theme)) {
+      errors.push('Недопустимая тема оформления');
+    }
+    if (settings.currency && !['KZT', 'RUB', 'USD', 'EUR'].includes(settings.currency)) {
+      errors.push('Недопустимая валюта');
+    }
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Ошибка валидации',
+      errors
+    });
+  }
+
+  next();
+};
+
 // Валидация MonthlyExpense (ежемесячные расходы)
 exports.validateMonthlyExpense = (req, res, next) => {
   const { name, amount, category, dueDate, sourceIncome, storageDeposit } = req.body;

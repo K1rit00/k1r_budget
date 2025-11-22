@@ -16,6 +16,18 @@ const userSchema = new mongoose.Schema({
     trim: true,
     maxlength: [50, 'Фамилия не может быть длиннее 50 символов']
   },
+  // New Personal Fields
+  phone: {
+    type: String,
+    trim: true,
+    maxlength: [20, 'Телефон не может быть длиннее 20 символов']
+  },
+  birthDate: {
+    type: Date
+  },
+  avatar: {
+    type: String, // Base64 string or URL
+  },
   login: {
     type: String,
     required: [true, 'Логин обязателен'],
@@ -36,11 +48,30 @@ const userSchema = new mongoose.Schema({
     type: String,
     select: false
   },
-  currency: {
-    type: String,
-    default: 'KZT',
-    enum: ['KZT', 'RUB', 'USD', 'EUR']
+  // Settings Object
+  settings: {
+    theme: {
+      type: String,
+      enum: ['light', 'dark', 'system'],
+      default: 'system'
+    },
+    currency: {
+      type: String,
+      default: 'KZT',
+      enum: ['KZT', 'RUB', 'USD', 'EUR']
+    },
+    dateFormat: {
+      type: String,
+      default: 'DD.MM.YYYY'
+    },
+    hideAmounts: {
+      type: Boolean,
+      default: false
+    }
   },
+  // Keep root currency for backward compatibility if needed, 
+  // but we will primarily use settings.currency now.
+  // You can create a pre-save hook to sync them if necessary.
   isActive: {
     type: Boolean,
     default: true
@@ -110,7 +141,6 @@ userSchema.methods.isSessionValid = function(serverStartTime) {
   const ONE_HOUR = 60 * 60 * 1000; // 1 час в миллисекундах
   const now = Date.now();
 
-  // Проверка 1: Сервер был перезапущен
   if (!this.lastLogin) {
     return false;
   }
@@ -118,7 +148,6 @@ userSchema.methods.isSessionValid = function(serverStartTime) {
     return false;
   }
   
-  // Проверка 2: Последняя активность была более 1 часа назад
   if (this.lastActivity && (now - this.lastActivity.getTime()) > ONE_HOUR) {
     return false;
   }

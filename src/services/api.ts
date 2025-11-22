@@ -138,6 +138,13 @@ export const apiService = {
     return response.data;
   },
 
+  // Update User Profile
+  updateProfile: async (data: any) => {
+    console.log('Sending data to update:', data); // Проверка, что уходит с фронта
+    const response = await api.put('/auth/profile', data);
+    return response.data;
+  },
+
   // Get saved user from token (checks if user is authenticated)
   getSavedUser: async () => {
     try {

@@ -265,3 +265,74 @@ exports.getMe = async (req, res) => {
     });
   }
 };
+
+
+// Update User Profile
+exports.updateProfile = async (req, res) => {
+  try {
+    console.log('Update profile body:', req.body); // 1. Лог для отладки входящих данных
+
+    const { 
+      firstName, 
+      lastName, 
+      phone, 
+      birthDate, 
+      settings 
+    } = req.body;
+
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Пользователь не найден' });
+    }
+
+    // Обновление простых полей
+    if (firstName) user.firstName = firstName;
+    if (lastName) user.lastName = lastName;
+    if (phone) user.phone = phone;
+    if (birthDate) user.birthDate = birthDate;
+    
+    // Обновление настроек (Settings)
+    if (settings) {
+      // ВАЖНО: Преобразуем текущие настройки в обычный объект перед слиянием, 
+      // иначе Mongoose может сохранить мусор или не сохранить ничего.
+      const currentSettings = user.settings ? user.settings.toObject() : {};
+      
+      user.settings = {
+        ...currentSettings,
+        ...settings
+      };
+      
+      // Синхронизация корневой валюты для совместимости
+      if (settings.currency) {
+        user.currency = settings.currency; 
+      }
+
+      // ВАЖНО: Явно сообщаем Mongoose, что поле settings изменилось
+      user.markModified('settings');
+    }
+
+    // Сохраняем
+    const updatedUser = await user.save();
+    console.log('User saved successfully:', updatedUser); // 2. Лог успешного сохранения
+
+    res.status(200).json({
+      success: true,
+      data: updatedUser
+    });
+  } catch (error) {
+    console.error('Update profile error:', error); // 3. Лог ошибки
+    
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Этот логин уже занят' 
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: 'Ошибка сервера при обновлении профиля',
+      error: error.message
+    });
+  }
+};
