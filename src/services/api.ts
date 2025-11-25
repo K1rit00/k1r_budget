@@ -1,7 +1,25 @@
 import axios from 'axios';
 
-// В проде используем относительный путь, в dev - localhost
-const API_URL = import.meta.env.VITE_API_URL || '/api/v1';
+// Автоматическое определение API URL в зависимости от окружения
+const getApiUrl = () => {
+  // Если в .env файле есть VITE_API_URL, используем его
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  
+  // Иначе определяем автоматически по режиму
+  if (import.meta.env.DEV) {
+    // Режим разработки
+    return 'http://localhost:5000/api/v1';
+  } else {
+    // Продакшен - используем относительный путь
+    return '/api/v1';
+  }
+};
+
+const API_URL = getApiUrl();
+
+console.log('API URL:', API_URL); // Для отладки
 
 const api = axios.create({
   baseURL: API_URL,
@@ -139,7 +157,6 @@ export const apiService = {
     return response.data;
   },
 
-  // Update User Profile
   updateProfile: async (data: any) => {
     const response = await api.put('/auth/profile', data);
     return response.data;
@@ -148,7 +165,6 @@ export const apiService = {
   changePassword: async (data: { currentPassword: string; newPassword: string }) => {
     const response = await api.put('/auth/password', data);
 
-    // Обновляем токены если они вернулись
     if (response.data.data?.tokens) {
       const { accessToken, refreshToken } = response.data.data.tokens;
       localStorage.setItem('accessToken', accessToken);
@@ -158,7 +174,6 @@ export const apiService = {
     return response.data;
   },
 
-  // Get saved user from token (checks if user is authenticated)
   getSavedUser: async () => {
     try {
       const accessToken = localStorage.getItem('accessToken');
@@ -176,7 +191,6 @@ export const apiService = {
       }
       return null;
     } catch (error: any) {
-      // If token is invalid or session expired, clear it
       if (error.response?.data?.code === 'SESSION_EXPIRED') {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
@@ -185,7 +199,6 @@ export const apiService = {
     }
   },
 
-  // Check if user is authenticated
   isAuthenticated: () => {
     const accessToken = localStorage.getItem('accessToken');
     return !!accessToken;
@@ -233,7 +246,7 @@ export const apiService = {
     return response.data;
   },
 
-  // Recurring Income (Регулярные доходы)
+  // Recurring Income
   getRecurringIncomes: async () => {
     const response = await api.get('/recurring-income');
     return response.data;
@@ -269,14 +282,12 @@ export const apiService = {
     return response.data;
   },
 
-  // Get available incomes (с остатками для пополнения депозитов)
   getAvailableIncomes: async () => {
     const response = await api.get('/deposits/available-incomes');
     return response.data;
   },
 
   getIncomeUsageHistory: async () => {
-    // Предполагаем, что такой маршрут существует для получения истории из IncomeUsage
     const response = await api.get('/income/usage/history');
     return response.data;
   },
@@ -302,7 +313,7 @@ export const apiService = {
     return response.data;
   },
 
-  // Credits (Кредиты)
+  // Credits
   getCredits: async (params?: { status?: string; bank?: string; type?: string; sortBy?: string; order?: string }) => {
     const response = await api.get('/credits', { params });
     return response.data;
@@ -323,7 +334,7 @@ export const apiService = {
     monthlyPayment: number;
     monthlyPaymentDate: number;
     startDate: string;
-    termInMonths: number; // <<< ИЗМЕНЕНИЕ
+    termInMonths: number;
     type: 'credit' | 'loan' | 'installment';
     description?: string;
     accountNumber?: string;
@@ -342,7 +353,7 @@ export const apiService = {
     monthlyPayment?: number;
     monthlyPaymentDate?: number;
     startDate?: string;
-    termInMonths?: number; // <<< ИЗМЕНЕНИЕ
+    termInMonths?: number;
     type?: 'credit' | 'loan' | 'installment';
     status?: 'active' | 'paid' | 'overdue' | 'cancelled';
     description?: string;
@@ -360,7 +371,7 @@ export const apiService = {
     return response.data;
   },
 
-  // Credit Payments (Платежи по кредитам)
+  // Credit Payments
   addPayment: async (creditId: string, data: {
     amount: number;
     paymentDate?: string;
@@ -383,7 +394,6 @@ export const apiService = {
     return response.data;
   },
 
-  // Credit Statistics & Utilities
   getCreditStatistics: async () => {
     const response = await api.get('/credits/statistics');
     return response.data;
@@ -567,7 +577,6 @@ export const apiService = {
     return response.data;
   },
 
-  // Rent Statistics
   getRentStatistics: async (params?: { startDate?: string; endDate?: string }) => {
     const response = await api.get('/rent/statistics', { params });
     return response.data;
@@ -609,7 +618,7 @@ export const apiService = {
     return response.data;
   },
 
-  // Banks (Банки)
+  // Banks
   getBanks: async () => {
     const response = await api.get('/banks');
     return response.data;
@@ -641,7 +650,7 @@ export const apiService = {
     return response.data;
   },
 
-  // Currencies (Валюты)
+  // Currencies
   getCurrencies: async () => {
     const response = await api.get('/currencies');
     return response.data;
@@ -684,14 +693,14 @@ export const apiService = {
     return response.data;
   },
 
-  // Utility Types (Типы коммунальных услуг)
+  // Utility Types
   getUtilityTypes: async () => {
-    const response = await api.get('/utilitytypes');  // Изменено с /utility-types
+    const response = await api.get('/utilitytypes');
     return response.data;
   },
 
   getUtilityType: async (id: string) => {
-    const response = await api.get(`/utilitytypes/${id}`);  // Изменено
+    const response = await api.get(`/utilitytypes/${id}`);
     return response.data;
   },
 
@@ -702,7 +711,7 @@ export const apiService = {
     color?: string;
     order?: number;
   }) => {
-    const response = await api.post('/utilitytypes', data);  // Изменено
+    const response = await api.post('/utilitytypes', data);
     return response.data;
   },
 
@@ -713,14 +722,15 @@ export const apiService = {
     color?: string;
     order?: number;
   }) => {
-    const response = await api.put(`/utilitytypes/${id}`, data);  // Изменено
+    const response = await api.put(`/utilitytypes/${id}`, data);
     return response.data;
   },
 
   deleteUtilityType: async (id: string) => {
-    const response = await api.delete(`/utilitytypes/${id}`);  // Изменено
+    const response = await api.delete(`/utilitytypes/${id}`);
     return response.data;
   },
+
   // Deposit Transactions
   getDepositTransactions: async (params?: {
     depositId?: string;
@@ -757,7 +767,7 @@ export const apiService = {
     return response.data;
   },
 
-  // Payment Reminders (Ручные напоминания)
+  // Payment Reminders
   getReminders: async () => {
     const response = await api.get('/reminders');
     return response.data;
@@ -775,7 +785,6 @@ export const apiService = {
     return response.data;
   },
 
-  // Добавляем метод обновления
   updateReminder: async (id: string, data: any) => {
     const response = await api.put(`/reminders/${id}`, data);
     return response.data;
@@ -785,7 +794,6 @@ export const apiService = {
     const response = await api.delete(`/reminders/${id}`);
     return response.data;
   },
-
 };
 
 export default api;

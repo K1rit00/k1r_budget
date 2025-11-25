@@ -5,16 +5,19 @@ yarn-debug.log*
 yarn-error.log*
 
 # Environment variables
+# ⚠️ ВАЖНО: В бэкенде обычно игнорируются ВСЕ .env файлы
+# потому что они содержат секреты (пароли БД, API ключи и т.д.)
 .env
 .env.local
-.env.development
 .env.test
-.env.production
+.env.*.local
+
+# Но можно создать .env.example как шаблон (его коммитим)
+# !.env.example
 
 # Build output
 dist/
 build/
-package-lock.json
 
 # IDE
 .vscode/
@@ -38,3 +41,11 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+# Uploads (если есть)
+uploads/
+
+# Database
+*.sqlite
+*.sqlite3
+*.db

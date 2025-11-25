@@ -1,8 +1,9 @@
-require('dotenv').config({ 
-  path: process.env.NODE_ENV === 'production' 
-    ? '.env.production' 
-    : '.env.development' 
-});
+const path = require('path');
+
+// Указываем путь к общему .env файлу в корне проекта
+const envPath = path.resolve(__dirname, '../../../.env');
+
+require('dotenv').config({ path: envPath });
 
 const config = {
   env: process.env.NODE_ENV || 'development',
@@ -40,10 +41,17 @@ const requiredEnvVars = [
   'ENCRYPTION_KEY',
 ];
 
-requiredEnvVars.forEach((envVar) => {
-  if (!process.env[envVar]) {
-    throw new Error(`Missing required environment variable: ${envVar}`);
-  }
-});
+const missingVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingVars.length > 0) {
+  console.error('❌ Missing required environment variables:');
+  missingVars.forEach(envVar => console.error(`   - ${envVar}`));
+  console.error(`\n📁 Looking for .env file at: ${envPath}`);
+  console.error(`📂 Current working directory: ${process.cwd()}`);
+  throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+}
+
+console.log('✅ Environment variables loaded successfully');
+console.log(`📁 Loaded from: ${envPath}`);
 
 module.exports = { config };
