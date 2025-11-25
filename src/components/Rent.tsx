@@ -1378,10 +1378,13 @@ function Rent() {
                       const utilityTypeName = getUtilityTypeName(payment.utilityTypeId);
 
                       return (
-                        <div key={payment._id} className="flex items-start justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
-                          <div className="flex-1">
+                        <div key={payment._id} className="flex flex-col sm:flex-row items-start justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
+                          <div className="flex-1 w-full">
                             <div className="flex items-center gap-2 mb-2 flex-wrap">
-                              <h4 className="font-semibold">{property?.address || "Объект удален"}</h4>
+                              {/* Добавлен класс break-words для переноса длинных адресов */}
+                              <h4 className="font-semibold break-words mr-1">
+                                {property?.address || "Объект удален"}
+                              </h4>
                               <Badge variant={
                                 payment.paymentType === "rent" ? "default" :
                                   payment.paymentType === "utilities" ? "secondary" :
@@ -1414,12 +1417,12 @@ function Rent() {
                               })}
                             </p>
                             {payment.notes && (
-                              <p className="text-sm text-muted-foreground mb-2">
+                              <p className="text-sm text-muted-foreground mb-2 break-words">
                                 {payment.notes}
                               </p>
                             )}
                             {payment.receiptFile && (
-                              <div className="flex items-center gap-2 mt-2">
+                              <div className="flex items-center gap-2 mt-2 flex-wrap">
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -1436,13 +1439,15 @@ function Rent() {
                                   <Download className="w-3 h-3 mr-1" />
                                   Скачать
                                 </Button>
-                                <span className="text-xs text-muted-foreground">
+                                <span className="text-xs text-muted-foreground truncate max-w-[150px]">
                                   {payment.receiptFileName}
                                 </span>
                               </div>
                             )}
                           </div>
-                          <div className="flex items-center gap-4 ml-4">
+
+                          {/* Адаптивный блок с ценой и кнопкой удаления */}
+                          <div className="flex items-center justify-between w-full sm:w-auto sm:justify-end gap-4 mt-4 sm:mt-0 sm:ml-4 border-t sm:border-t-0 pt-3 sm:pt-0">
                             <span className="text-xl font-bold whitespace-nowrap">
                               {payment.amount.toLocaleString("ru-RU")} ₸
                             </span>
@@ -1450,6 +1455,7 @@ function Rent() {
                               variant="ghost"
                               size="sm"
                               onClick={() => deletePayment(payment._id)}
+                              className="text-muted-foreground hover:text-destructive"
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>

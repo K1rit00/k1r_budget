@@ -1067,34 +1067,35 @@ function Credits() {
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between text-sm pt-4 border-t">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-sm pt-4 border-t gap-3 sm:gap-0">
                           <span className="text-muted-foreground">
                             {new Date(credit.startDate).toLocaleDateString("ru-RU")} - {new Date(credit.endDate).toLocaleDateString("ru-RU")}
                           </span>
                           {credit.status === "active" && (
-                            <div className="flex gap-2">
+                            <div className="flex w-full sm:w-auto gap-2">
                               <Button
                                 size="sm"
                                 variant="default"
                                 onClick={() => openPaymentDialog(credit, true)}
-                                className="bg-green-500 hover:bg-green-600 text-white shadow-md"
+                                className="flex-1 sm:flex-none bg-green-500 hover:bg-green-600 text-white shadow-md px-2"
                                 disabled={actionLoading}
                               >
                                 {actionLoading ? (
-                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
                                 ) : (
-                                  <CheckCircle className="w-4 h-4 mr-2" />
+                                  <CheckCircle className="w-4 h-4 mr-1" />
                                 )}
-                                Оплатить ежемесячный
+                                Ежемесячный
                               </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => openPaymentDialog(credit, false)}
                                 disabled={actionLoading}
+                                className="flex-1 sm:flex-none px-2"
                               >
-                                <Plus className="w-4 h-4 mr-2" />
-                                Другая сумма
+                                <Plus className="w-4 h-4 mr-1" />
+                                Другая
                               </Button>
                             </div>
                           )}

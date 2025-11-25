@@ -1,6 +1,29 @@
-import {Calendar,Home,User,CreditCard,Building,Wallet,BookOpen,PlusCircle,Zap,TrendingUp,PiggyBank,} from "lucide-react";
-import { useAppContext, useAppActions } from "../contexts/AppContext"; // Импортируем контекст
-import {Sidebar,SidebarContent,SidebarGroup,SidebarGroupContent,SidebarGroupLabel,SidebarMenu,SidebarMenuButton,SidebarMenuItem,} from "./ui/sidebar";
+import React from "react"; // 1. Добавлен импорт React для типов
+import {
+  Calendar,
+  Home,
+  User,
+  CreditCard,
+  Building,
+  Wallet,
+  BookOpen,
+  PlusCircle,
+  Zap,
+  TrendingUp,
+  PiggyBank,
+} from "lucide-react";
+import { useAppContext, useAppActions } from "../contexts/AppContext";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar,
+} from "./ui/sidebar";
 
 const mainItems = [
   {
@@ -69,21 +92,27 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
-  // Получаем состояние и действия
   const { state } = useAppContext();
-  const { setGlobalLoading } = useAppActions(); // Достаем экшен установки загрузки
+  const { setGlobalLoading } = useAppActions();
   const isLoading = state.globalLoading;
+
+  // Получаем состояние мобильного устройства и функцию управления меню
+  const { isMobile, setOpenMobile } = useSidebar();
 
   const isActive = (url: string) => currentView === url.substring(1);
 
-  // Функция обработки навигации
   const handleNavigation = (url: string) => {
     const targetView = url.substring(1);
+
+    // Если это мобильное устройство, закрываем меню сразу при клике
+    if (isMobile) {
+      setOpenMobile(false);
+    }
     
     // Блокируем, если уже идет загрузка или мы уже на этой странице
     if (isLoading || currentView === targetView) return;
 
-    // 1. Мгновенно включаем глобальный лоадер
+    // Мгновенно включаем глобальный лоадер
     setGlobalLoading(true);
     onViewChange(targetView);
   };
@@ -102,9 +131,10 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                   <SidebarMenuButton
                     asChild
                     isActive={isActive(item.url)}
-                    disabled={isLoading} // Блокируем кнопку визуально
-                    onClick={(e) => {
-                      e.preventDefault(); // Предотвращаем стандартное поведение ссылки
+                    disabled={isLoading}
+                    // 2. Исправлен тип события e
+                    onClick={(e: React.MouseEvent) => {
+                      e.preventDefault();
                       handleNavigation(item.url);
                     }}
                     className={isLoading ? "opacity-50 cursor-not-allowed pointer-events-none" : ""}
@@ -131,9 +161,10 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                   <SidebarMenuButton
                     asChild
                     isActive={isActive(item.url)}
-                    disabled={isLoading} // Блокируем кнопку визуально
-                    onClick={(e) => {
-                      e.preventDefault(); // Предотвращаем стандартное поведение ссылки
+                    disabled={isLoading}
+                    // 3. Исправлен тип события e
+                    onClick={(e: React.MouseEvent) => {
+                      e.preventDefault();
                       handleNavigation(item.url);
                     }}
                     className={isLoading ? "opacity-50 cursor-not-allowed pointer-events-none" : ""}
