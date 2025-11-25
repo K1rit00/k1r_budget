@@ -1,12 +1,12 @@
 import React, { Suspense, useMemo, lazy, useEffect, useState, useRef } from "react";
-import { SidebarProvider, SidebarInset } from "./components/ui/sidebar";
+import { SidebarProvider, SidebarInset, SidebarTrigger } from "./components/ui/sidebar";
 import { AppSidebar } from "./components/AppSidebar";
 import { Auth } from "./components/Auth";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { toast } from "sonner";
-import { LogOut, Clock, BellRing } from "lucide-react"; // Добавили иконку BellRing
+import { LogOut, Clock, BellRing, Menu } from "lucide-react";
 import { AppProvider, useAppContext, useAppActions } from "./contexts/AppContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingFallback } from "./components/common/LoadingFallback";
@@ -15,7 +15,6 @@ import api, { apiService } from "./services/api";
 import { GlobalLoader, FullScreenLoaderUI } from "./services/GlobalLoader";
 import type { User } from "./types";
 
-// ... (Оставляем константы ROUTES, PAGE_TITLES, PAGE_DESCRIPTIONS без изменений) ...
 const ROUTES = {
   DASHBOARD: "dashboard",
   QUICK_EXPENSES: "quick-expenses", 
@@ -78,10 +77,8 @@ function AppContent() {
   const [sessionExpired, setSessionExpired] = useState(false);
   const requestCountRef = useRef(0);
 
-  // --- НОВАЯ ФУНКЦИЯ: Проверка напоминаний на сегодня ---
   const checkTodayReminders = async () => {
     try {
-      // Параллельно запрашиваем данные (тихо, без блокировки UI если возможно)
       const [creditsRes, rentsRes, remindersRes] = await Promise.all([
         apiService.getCredits({ status: 'active' }),
         apiService.getRentProperties({ status: 'active' }),
@@ -99,9 +96,7 @@ function AppContent() {
 
       let todayCount = 0;
 
-      // 1. Проверка кредитов (упрощенная логика календаря)
       credits.forEach((credit: any) => {
-        // Если дата платежа больше кол-ва дней в месяце, то платеж в последний день
         const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
         const paymentDay = Math.min(credit.monthlyPaymentDate, daysInMonth);
         
@@ -113,25 +108,21 @@ function AppContent() {
         }
       });
 
-      // 2. Проверка аренды (обычно 1 число)
       rents.forEach((rent: any) => {
         if (currentDay === 1) {
            const startDate = new Date(rent.startDate);
            startDate.setHours(0,0,0,0);
-           // Проверяем активность
            if (today >= startDate && (!rent.endDate || new Date(rent.endDate) >= today)) {
              todayCount++;
            }
         }
       });
 
-      // 3. Ручные напоминания
       manualReminders.forEach((reminder: any) => {
         const remDate = new Date(reminder.date);
         
         if (reminder.isRecurring) {
            const targetDay = reminder.dayOfMonth || remDate.getDate();
-           // Коррекция на конец месяца
            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
            const actualDay = Math.min(targetDay, daysInMonth);
            
@@ -145,12 +136,11 @@ function AppContent() {
         }
       });
 
-      // Если есть платежи — отправляем уведомление
       if (todayCount > 0) {
         toast(`На сегодня запланировано платежей: ${todayCount}`, {
           description: "Не забудьте проверить календарь платежей",
           icon: <BellRing className="w-5 h-5 text-blue-500" />,
-          duration: 8000, // Показываем подольше
+          duration: 8000,
           action: {
             label: "Смотреть",
             onClick: () => setCurrentView(ROUTES.CALENDAR)
@@ -162,9 +152,7 @@ function AppContent() {
       console.error("Ошибка при проверке ежедневных напоминаний", error);
     }
   };
-  // ------------------------------------------------------
 
-  // 1. LOGIC: Интерсепторы
   useEffect(() => {
     const reqInterceptor = api.interceptors.request.use(
       (config) => {
@@ -207,7 +195,6 @@ function AppContent() {
     };
   }, [setGlobalLoading]);
 
-  // 2. LOGIC: Страховка от вечной загрузки
   useEffect(() => {
     let safetyTimer: NodeJS.Timeout;
 
@@ -224,7 +211,6 @@ function AppContent() {
     };
   }, [state.globalLoading, state.currentView, setGlobalLoading]);
 
-  // Проверяем сохраненного пользователя при загрузке приложения
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -237,7 +223,6 @@ function AppContent() {
           const savedUser = await apiService.getSavedUser();
           if (savedUser) {
             setUser(savedUser);
-            // ВЫЗОВ ПРОВЕРКИ НАПОМИНАНИЙ (при перезагрузке страницы)
             checkTodayReminders(); 
           }
         }
@@ -251,7 +236,6 @@ function AppContent() {
     checkAuth();
   }, []);
 
-  // Слушаем событие истечения сессии
   useEffect(() => {
     const handleSessionExpiration = () => {
       console.log('Session expired - logging out user');
@@ -271,7 +255,6 @@ function AppContent() {
     };
   }, []);
 
-  // Автоматическая проверка активности
   useEffect(() => {
     if (!state.user) return;
     const checkActivity = setInterval(() => {
@@ -291,7 +274,6 @@ function AppContent() {
       duration: 3000
     });
 
-    // ВЫЗОВ ПРОВЕРКИ НАПОМИНАНИЙ (при явном входе через форму)
     checkTodayReminders();
   };
 
@@ -309,7 +291,6 @@ function AppContent() {
   };
 
   const renderContent = useMemo(() => {
-    // ... (код renderContent без изменений) ...
     const currentRoute = state.currentView || 'dashboard';
     
     const getComponent = () => {
@@ -371,15 +352,23 @@ function AppContent() {
         <AppSidebar currentView={state.currentView} onViewChange={setCurrentView} />
         <SidebarInset className="flex-1">
           <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-40">
-            <div className="flex h-16 items-center justify-between px-6">
-              <div>
-                <h1 className="text-xl font-semibold">{pageTitle}</h1>
-                <p className="text-sm text-muted-foreground">
-                  {pageDescription}
-                </p>
+            <div className="flex h-16 items-center justify-between px-4 sm:px-6">
+              <div className="flex items-center gap-3">
+                {/* КНОПКА МЕНЮ ДЛЯ МОБИЛЬНЫХ УСТРОЙСТВ */}
+                <SidebarTrigger className="md:hidden" />
+                
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-xl font-semibold truncate">{pageTitle}</h1>
+                  <p className="text-xs sm:text-sm text-muted-foreground truncate hidden xs:block">
+                    {pageDescription}
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-muted-foreground">{state.user?.email}</span>
+              
+              <div className="flex items-center gap-2 sm:gap-4">
+                <span className="text-xs sm:text-sm text-muted-foreground hidden sm:inline truncate max-w-[150px]">
+                  {state.user?.email}
+                </span>
                 <Button 
                   variant="outline" 
                   size="sm"
@@ -387,12 +376,12 @@ function AppContent() {
                   className="gap-2"
                 >
                   <LogOut className="w-4 h-4" />
-                  Выйти
+                  <span className="hidden sm:inline">Выйти</span>
                 </Button>
               </div>
             </div>
           </header>
-          <main className="flex-1 p-6 bg-gradient-to-br from-background to-muted/20 overflow-auto">
+          <main className="flex-1 p-4 sm:p-6 bg-gradient-to-br from-background to-muted/20 overflow-auto">
             {renderContent}
           </main>
         </SidebarInset>
