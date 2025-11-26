@@ -59,17 +59,17 @@ function Profile() {
         const response = await apiService.getMe();
         if (response.success) {
           const userData = response.data.user;
-          
+
           setProfile({
             firstName: userData.firstName || "",
             lastName: userData.lastName || "",
-            email: userData.login || "", 
+            email: userData.login || "",
             phone: userData.phone || "",
             birthDate: userData.birthDate ? userData.birthDate.split('T')[0] : "",
           });
 
           const userSettings = userData.settings || {};
-          
+
           setSettings(prev => ({
             ...prev,
             privacy: {
@@ -84,7 +84,7 @@ function Profile() {
           }));
 
           if (userSettings.theme && userSettings.theme !== theme) {
-             setTheme(userSettings.theme);
+            setTheme(userSettings.theme);
           }
         }
       } catch (error) {
@@ -194,7 +194,7 @@ function Profile() {
       ...prev,
       appearance: { ...prev.appearance, theme: newTheme }
     }));
-    setTheme(newTheme); 
+    setTheme(newTheme);
   };
 
   // --- Components ---
@@ -211,18 +211,18 @@ function Profile() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="firstName">Имя</Label>
-              <Input 
+              <Input
                 id="firstName"
                 value={profile.firstName}
-                onChange={(e) => setProfile({...profile, firstName: e.target.value})}
+                onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
               />
             </div>
             <div>
               <Label htmlFor="lastName">Фамилия</Label>
-              <Input 
+              <Input
                 id="lastName"
                 value={profile.lastName}
-                onChange={(e) => setProfile({...profile, lastName: e.target.value})}
+                onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
               />
             </div>
           </div>
@@ -232,21 +232,21 @@ function Profile() {
           </div>
           <div>
             <Label htmlFor="phone">Телефон</Label>
-            <Input 
+            <Input
               id="phone"
               value={profile.phone}
               placeholder="+7 (xxx) xxx-xx-xx"
-              onChange={(e) => setProfile({...profile, phone: e.target.value})}
+              onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
             />
           </div>
           <div>
             <Label htmlFor="birthDate">Дата рождения</Label>
-            <Input 
+            <Input
               id="birthDate"
               type="date"
               className="date-input"
               value={profile.birthDate}
-              onChange={(e) => setProfile({...profile, birthDate: e.target.value})}
+              onChange={(e) => setProfile({ ...profile, birthDate: e.target.value })}
             />
           </div>
           <Button className="w-full" onClick={handleSavePersonalInfo} disabled={isSaving}>
@@ -273,7 +273,7 @@ function Profile() {
               {passwordError}
             </div>
           )}
-          
+
           {passwordSuccess && (
             <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm text-green-600 dark:text-green-400 flex items-center gap-2">
               <Check className="w-4 h-4" />
@@ -281,71 +281,71 @@ function Profile() {
             </div>
           )}
 
-<div className="space-y-2">
-  <Label htmlFor="currentPassword">Текущий пароль</Label>
-  <div className="flex gap-2">
-    <Input 
-      id="currentPassword"
-      type={showPasswords.current ? "text" : "password"}
-      value={passwordData.currentPassword}
-      onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})}
-      placeholder="Введите текущий пароль"
-      className="flex-1"
-    />
-    <button
-      type="button"
-      className="text-muted-foreground hover:text-foreground p-2"
-      onClick={() => setShowPasswords({...showPasswords, current: !showPasswords.current})}
-    >
-      {showPasswords.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-    </button>
-  </div>
-</div>
+          <div className="space-y-2">
+            <Label htmlFor="currentPassword">Текущий пароль</Label>
+            <div className="flex gap-2">
+              <Input
+                id="currentPassword"
+                type={showPasswords.current ? "text" : "password"}
+                value={passwordData.currentPassword}
+                onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                placeholder="Введите текущий пароль"
+                className="flex-1"
+              />
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground p-2"
+                onClick={() => setShowPasswords({ ...showPasswords, current: !showPasswords.current })}
+              >
+                {showPasswords.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
 
-<div className="space-y-2">
-  <Label htmlFor="newPassword">Новый пароль</Label>
-  <div className="flex gap-2">
-    <Input 
-      id="newPassword"
-      type={showPasswords.new ? "text" : "password"}
-      value={passwordData.newPassword}
-      onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
-      placeholder="Минимум 6 символов"
-      className="flex-1"
-    />
-    <button
-      type="button"
-      className="text-muted-foreground hover:text-foreground p-2"
-      onClick={() => setShowPasswords({...showPasswords, new: !showPasswords.new})}
-    >
-      {showPasswords.new ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-    </button>
-  </div>
-</div>
+          <div className="space-y-2">
+            <Label htmlFor="newPassword">Новый пароль</Label>
+            <div className="flex gap-2">
+              <Input
+                id="newPassword"
+                type={showPasswords.new ? "text" : "password"}
+                value={passwordData.newPassword}
+                onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                placeholder="Минимум 6 символов"
+                className="flex-1"
+              />
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground p-2"
+                onClick={() => setShowPasswords({ ...showPasswords, new: !showPasswords.new })}
+              >
+                {showPasswords.new ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
 
-<div className="space-y-2">
-  <Label htmlFor="confirmPassword">Подтвердите новый пароль</Label>
-  <div className="flex gap-2">
-    <Input 
-      id="confirmPassword"
-      type={showPasswords.confirm ? "text" : "password"}
-      value={passwordData.confirmPassword}
-      onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
-      placeholder="Повторите новый пароль"
-      className="flex-1"
-    />
-    <button
-      type="button"
-      className="text-muted-foreground hover:text-foreground p-2"
-      onClick={() => setShowPasswords({...showPasswords, confirm: !showPasswords.confirm})}
-    >
-      {showPasswords.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-    </button>
-  </div>
-</div>
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword">Подтвердите новый пароль</Label>
+            <div className="flex gap-2">
+              <Input
+                id="confirmPassword"
+                type={showPasswords.confirm ? "text" : "password"}
+                value={passwordData.confirmPassword}
+                onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                placeholder="Повторите новый пароль"
+                className="flex-1"
+              />
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground p-2"
+                onClick={() => setShowPasswords({ ...showPasswords, confirm: !showPasswords.confirm })}
+              >
+                {showPasswords.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
 
-          <Button 
-            className="w-full" 
+          <Button
+            className="w-full"
             onClick={handleChangePassword}
             disabled={isChangingPassword}
           >
@@ -368,7 +368,7 @@ function Profile() {
               <p className="font-medium">Скрывать суммы</p>
               <p className="text-sm text-muted-foreground">Заменяет суммы на ***</p>
             </div>
-            <Switch 
+            <Switch
               checked={settings.privacy.hideAmounts}
               onCheckedChange={(checked) => setSettings(prev => ({
                 ...prev,
@@ -387,7 +387,7 @@ function Profile() {
               <Switch disabled checked={false} />
             </div>
           </div>
-          
+
           <Button className="w-full" onClick={handleSaveSettings} disabled={isSaving}>
             {isSaving ? "Сохранение..." : "Сохранить настройки"}
           </Button>
@@ -417,13 +417,12 @@ function Profile() {
                   { value: "dark", label: "Темная тема", icon: Moon, gradient: "from-blue-900 to-purple-900", iconColor: "text-blue-200" },
                   { value: "system", label: "Системная тема", icon: Monitor, gradient: "from-purple-100 to-pink-100 dark:from-purple-900 dark:to-pink-900", iconColor: "text-purple-600 dark:text-purple-300" }
                 ].map(({ value, label, icon: Icon, gradient, iconColor }) => (
-                  <div 
+                  <div
                     key={value}
-                    className={`border-2 rounded-xl p-4 cursor-pointer transition-all hover:shadow-md ${
-                      currentTheme === value 
-                        ? "border-primary bg-primary/5 shadow-sm" 
+                    className={`border-2 rounded-xl p-4 cursor-pointer transition-all hover:shadow-md ${currentTheme === value
+                        ? "border-primary bg-primary/5 shadow-sm"
                         : "border-border hover:border-muted-foreground"
-                    }`}
+                      }`}
                     onClick={() => handleThemeChange(value as "light" | "dark" | "system")}
                   >
                     <div className="flex items-center gap-4">
