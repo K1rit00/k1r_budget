@@ -281,65 +281,68 @@ function Profile() {
             </div>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="currentPassword">Текущий пароль</Label>
-            <div className="relative">
-              <Input 
-                id="currentPassword"
-                type={showPasswords.current ? "text" : "password"}
-                value={passwordData.currentPassword}
-                onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})}
-                placeholder="Введите текущий пароль"
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowPasswords({...showPasswords, current: !showPasswords.current})}
-              >
-                {showPasswords.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
+<div className="space-y-2">
+  <Label htmlFor="currentPassword">Текущий пароль</Label>
+  <div className="flex gap-2">
+    <Input 
+      id="currentPassword"
+      type={showPasswords.current ? "text" : "password"}
+      value={passwordData.currentPassword}
+      onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})}
+      placeholder="Введите текущий пароль"
+      className="flex-1"
+    />
+    <button
+      type="button"
+      className="text-muted-foreground hover:text-foreground p-2"
+      onClick={() => setShowPasswords({...showPasswords, current: !showPasswords.current})}
+    >
+      {showPasswords.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+    </button>
+  </div>
+</div>
 
-          <div className="space-y-2">
-            <Label htmlFor="newPassword">Новый пароль</Label>
-            <div className="relative">
-              <Input 
-                id="newPassword"
-                type={showPasswords.new ? "text" : "password"}
-                value={passwordData.newPassword}
-                onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
-                placeholder="Минимум 6 символов"
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowPasswords({...showPasswords, new: !showPasswords.new})}
-              >
-                {showPasswords.new ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
+<div className="space-y-2">
+  <Label htmlFor="newPassword">Новый пароль</Label>
+  <div className="flex gap-2">
+    <Input 
+      id="newPassword"
+      type={showPasswords.new ? "text" : "password"}
+      value={passwordData.newPassword}
+      onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
+      placeholder="Минимум 6 символов"
+      className="flex-1"
+    />
+    <button
+      type="button"
+      className="text-muted-foreground hover:text-foreground p-2"
+      onClick={() => setShowPasswords({...showPasswords, new: !showPasswords.new})}
+    >
+      {showPasswords.new ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+    </button>
+  </div>
+</div>
 
-          <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Подтвердите новый пароль</Label>
-            <div className="relative">
-              <Input 
-                id="confirmPassword"
-                type={showPasswords.confirm ? "text" : "password"}
-                value={passwordData.confirmPassword}
-                onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
-                placeholder="Повторите новый пароль"
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowPasswords({...showPasswords, confirm: !showPasswords.confirm})}
-              >
-                {showPasswords.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
+<div className="space-y-2">
+  <Label htmlFor="confirmPassword">Подтвердите новый пароль</Label>
+  <div className="flex gap-2">
+    <Input 
+      id="confirmPassword"
+      type={showPasswords.confirm ? "text" : "password"}
+      value={passwordData.confirmPassword}
+      onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
+      placeholder="Повторите новый пароль"
+      className="flex-1"
+    />
+    <button
+      type="button"
+      className="text-muted-foreground hover:text-foreground p-2"
+      onClick={() => setShowPasswords({...showPasswords, confirm: !showPasswords.confirm})}
+    >
+      {showPasswords.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+    </button>
+  </div>
+</div>
 
           <Button 
             className="w-full" 
