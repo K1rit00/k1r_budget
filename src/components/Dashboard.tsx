@@ -35,7 +35,7 @@ interface Deposit {
   title: string;
   name: string;
   currentBalance: number;
-  amount: number;
+  targetAmount: number;
   isActive: boolean;
   endDate: string | Date;
   type: string;
@@ -103,6 +103,7 @@ const Dashboard = memo(function Dashboard() {
           isActive: d.status === 'active',
           currentBalance: Number(d.currentBalance),
           amount: Number(d.amount),
+          targetAmount: Number(d.targetAmount || 0),
           type: d.type
         }));
         setDeposits(mappedDeposits);
@@ -247,13 +248,11 @@ const Dashboard = memo(function Dashboard() {
 
           <div>
             <div className="flex justify-between items-center mb-2">
-              {/* Обновленный заголовок и метрика */}
               <span className="text-sm">Долговая нагрузка (Кредит + Аренда)</span>
               <span className="text-sm font-medium">{fixedCostRatio.toFixed(1)}%</span>
             </div>
             <Progress value={Math.min(100, fixedCostRatio)} className="h-2" />
             <p className="text-xs text-muted-foreground mt-1">
-              {/* Новые лимиты риска с учетом аренды */}
               {fixedCostRatio <= 40 ? "Комфортный уровень" : fixedCostRatio <= 60 ? "Умеренная нагрузка" : monthlyIncome > 0 ? "Высокий риск (>60%)" : "Нет данных о доходах"}
             </p>
           </div>
@@ -313,12 +312,12 @@ const Dashboard = memo(function Dashboard() {
                   <Tooltip
                     formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
                     contentStyle={{
-                      backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
-                      borderRadius: '12px',       // Закругление углов
-                      border: '1px solid #374151', // Цвет рамки
-                      color: '#fff'               // Цвет текста (если нужно)
+                      backgroundColor: '#1f2937',
+                      borderRadius: '12px',
+                      border: '1px solid #374151',
+                      color: '#fff'
                     }}
-                    itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                    itemStyle={{ color: '#fff' }}
                   />
                 </RechartsPieChart>
               </ResponsiveContainer>
@@ -366,7 +365,8 @@ const Dashboard = memo(function Dashboard() {
           target: credit.amount,
           color: "bg-red-500",
           monthlyPayment: credit.monthlyPayment,
-          type: "credit"
+          type: "credit",
+          showProgress: true
         })) : []}
         emptyMessage="Нет активных кредитов"
       />
@@ -374,24 +374,29 @@ const Dashboard = memo(function Dashboard() {
   });
 
   const DepositsProgress = memo(() => {
-    const savingsDeposits = deposits.filter(d =>
-      d.isActive &&
-      (d.type === "savings" || d.type === "fixed" || d.type === "investment" || d.type === "spending")
-    );
+    const activeDeposits = deposits.filter(d => d.isActive);
 
     return (
       <ProgressCard
         title="Прогресс по накоплениям"
         icon={Heart}
-        items={savingsDeposits.length > 0 ? savingsDeposits.map(deposit => ({
-          id: deposit.id!,
-          name: deposit.title,
-          current: deposit.currentBalance,
-          target: deposit.amount > deposit.currentBalance ? deposit.amount : deposit.currentBalance * 1.1,
-          color: "bg-green-500",
-          deadline: deposit.endDate ? new Date(deposit.endDate).toLocaleDateString('ru-RU') : 'Нет даты',
-          type: "goal"
-        })) : []}
+        items={activeDeposits.length > 0 ? activeDeposits.map(deposit => {
+          // Прогресс-бар показываем только для накопительных депозитов (savings)
+          const isSavingsType = deposit.type === "savings";
+          
+          return {
+            id: deposit.id!,
+            name: deposit.title,
+            current: deposit.currentBalance,
+            target: isSavingsType && deposit.targetAmount > 0 
+              ? deposit.targetAmount 
+              : deposit.currentBalance,
+            color: "bg-green-500",
+            deadline: deposit.endDate ? new Date(deposit.endDate).toLocaleDateString('ru-RU') : 'Нет даты',
+            type: isSavingsType ? "goal" : "info",
+            showProgress: isSavingsType
+          };
+        }) : []}
         emptyMessage="Нет активных депозитов"
       />
     );

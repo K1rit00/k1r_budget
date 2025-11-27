@@ -10,7 +10,8 @@ interface ProgressItem {
   color: string;
   monthlyPayment?: number;
   deadline?: string;
-  type?: "credit" | "goal" | "general";
+  type?: "credit" | "goal" | "general" | "info";
+  showProgress?: boolean; // Новый флаг для управления отображением прогресс-бара
 }
 
 interface ProgressCardProps {
@@ -49,6 +50,7 @@ export function ProgressCard({
           const progressPercentage = (item.current / item.target) * 100;
           const isCredit = item.type === "credit";
           const isGoal = item.type === "goal";
+          const shouldShowProgress = item.showProgress !== false; // По умолчанию true
           
           return (
             <div key={item.id} className="space-y-2">
@@ -70,28 +72,34 @@ export function ProgressCard({
                     <p className="text-xs text-muted-foreground">
                       {item.monthlyPayment.toLocaleString("kk-KZ")} {currency}/мес
                     </p>
-                  ) : (
+                  ) : shouldShowProgress && item.target > 0 ? (
                     <p className="text-xs text-muted-foreground">
                       из {item.target.toLocaleString("kk-KZ")} {currency}
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </div>
-              <Progress value={Math.min(progressPercentage, 100)} className="h-2" />
-              {showPercentage && (
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  {isCredit ? (
-                    <>
-                      <span>Выплачено {progressPercentage.toFixed(1)}%</span>
-                      <span>Осталось {(100 - progressPercentage).toFixed(1)}%</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>{progressPercentage.toFixed(1)}% {isGoal ? "достигнуто" : "выполнено"}</span>
-                      <span>Осталось {(item.target - item.current).toLocaleString("kk-KZ")} {currency}</span>
-                    </>
+              
+              {/* Прогресс-бар отображается только если shouldShowProgress === true */}
+              {shouldShowProgress && (
+                <>
+                  <Progress value={Math.min(progressPercentage, 100)} className="h-2" />
+                  {showPercentage && (
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      {isCredit ? (
+                        <>
+                          <span>Выплачено {progressPercentage.toFixed(1)}%</span>
+                          <span>Осталось {(100 - progressPercentage).toFixed(1)}%</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>{progressPercentage.toFixed(1)}% {isGoal ? "достигнуто" : "выполнено"}</span>
+                          <span>Осталось {(item.target - item.current).toLocaleString("kk-KZ")} {currency}</span>
+                        </>
+                      )}
+                    </div>
                   )}
-                </div>
+                </>
               )}
             </div>
           );
