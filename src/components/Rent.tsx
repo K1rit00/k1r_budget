@@ -592,7 +592,7 @@ function Rent() {
     link.click();
   };
 
-// Просмотр квитанции
+  // Просмотр квитанции
   const viewReceipt = (payment: RentPayment) => {
     if (!payment.receiptFile) {
       toast.error("Файл квитанции отсутствует");
@@ -602,18 +602,18 @@ function Rent() {
     try {
       // 1. Преобразуем Base64 в Blob
       const blob = dataURItoBlob(payment.receiptFile);
-      
+
       // 2. Создаем временную ссылку на этот Blob
       const url = URL.createObjectURL(blob);
-      
+
       // 3. Открываем эту ссылку в новой вкладке
       const newWindow = window.open(url, "_blank");
-      
+
       if (!newWindow) {
         toast.error("Браузер заблокировал всплывающее окно. Разрешите всплывающие окна для этого сайта.");
       }
 
-      setTimeout(() => URL.revokeObjectURL(url), 60000); 
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
 
     } catch (error) {
       console.error("Ошибка при открытии файла:", error);
@@ -897,53 +897,57 @@ function Rent() {
                         />
                       </div>
 
-                      <div>
-                        <Label htmlFor="rentAmount">Арендная плата (₸) *</Label>
-                        <Input
-                          id="rentAmount"
-                          name="rentAmount"
-                          type="number"
-                          step="0.01"
-                          required
-                          defaultValue={editingProperty?.rentAmount}
-                          placeholder="150000"
-                        />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="rentAmount">Арендная плата (₸) *</Label>
+                          <Input
+                            id="rentAmount"
+                            name="rentAmount"
+                            type="number"
+                            step="0.01"
+                            required
+                            defaultValue={editingProperty?.rentAmount}
+                            placeholder="150000"
+                          />
+                        </div>
+
+                        <div>
+                          <Label htmlFor="deposit">Залог (₸) *</Label>
+                          <Input
+                            id="deposit"
+                            name="deposit"
+                            type="number"
+                            step="0.01"
+                            required
+                            defaultValue={editingProperty?.deposit}
+                            placeholder="150000"
+                          />
+                        </div>
                       </div>
 
-                      <div>
-                        <Label htmlFor="deposit">Залог (₸) *</Label>
-                        <Input
-                          id="deposit"
-                          name="deposit"
-                          type="number"
-                          step="0.01"
-                          required
-                          defaultValue={editingProperty?.deposit}
-                          placeholder="150000"
-                        />
-                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="startDate">Дата начала аренды *</Label>
+                          <Input
+                            id="startDate"
+                            name="startDate"
+                            type="date"
+                            className="date-input"
+                            required
+                            defaultValue={editingProperty?.startDate?.split('T')[0]}
+                          />
+                        </div>
 
-                      <div>
-                        <Label htmlFor="startDate">Дата начала аренды *</Label>
-                        <Input
-                          id="startDate"
-                          name="startDate"
-                          type="date"
-                          className="date-input"
-                          required
-                          defaultValue={editingProperty?.startDate?.split('T')[0]}
-                        />
-                      </div>
-
-                      <div>
-                        <Label htmlFor="endDate">Дата окончания аренды</Label>
-                        <Input
-                          id="endDate"
-                          name="endDate"
-                          className="date-input"
-                          type="date"
-                          defaultValue={editingProperty?.endDate?.split('T')[0]}
-                        />
+                        <div>
+                          <Label htmlFor="endDate">Дата окончания аренды</Label>
+                          <Input
+                            id="endDate"
+                            name="endDate"
+                            className="date-input"
+                            type="date"
+                            defaultValue={editingProperty?.endDate?.split('T')[0]}
+                          />
+                        </div>
                       </div>
 
                       <div>
@@ -986,7 +990,7 @@ function Rent() {
                               <div className="flex-1">
                                 <Select
                                   value={item.utilityTypeId || ""}
-                                  tickFormatter={(value: number) => `${value / 1000}к`}
+                                  onValueChange={(value) => updateUtilityItem(index, 'utilityTypeId', value)}
                                 >
                                   <SelectTrigger>
                                     <SelectValue placeholder="Выберите услугу" />
@@ -1071,6 +1075,7 @@ function Rent() {
                 </DialogContent>
               </Dialog>
             </CardHeader>
+
             <CardContent>
               <div className="space-y-4">
                 {properties.length === 0 ? (
@@ -1220,7 +1225,6 @@ function Rent() {
             </CardContent>
           </Card>
 
-          {/* Диалог добавления платежа */}
           <Dialog open={isPaymentDialogOpen} onOpenChange={(open) => {
             setIsPaymentDialogOpen(open);
             if (!open) {
@@ -1355,6 +1359,7 @@ function Rent() {
                     placeholder="150000"
                   />
                 </div>
+
                 <div>
                   <Label htmlFor="paymentDate">Дата платежа *</Label>
                   <Input
@@ -1366,6 +1371,7 @@ function Rent() {
                     defaultValue={new Date().toISOString().split('T')[0]}
                   />
                 </div>
+
                 <div>
                   <Label htmlFor="receipt">Квитанция об оплате</Label>
                   <div className="flex items-center gap-2">
@@ -1388,6 +1394,7 @@ function Rent() {
                     Форматы: JPG, PNG, WEBP, PDF. Максимум 5MB
                   </p>
                 </div>
+
                 <div>
                   <Label htmlFor="notes">Примечания</Label>
                   <Textarea
@@ -1397,6 +1404,7 @@ function Rent() {
                     rows={3}
                   />
                 </div>
+
                 <div className="flex gap-2">
                   <Button type="submit" className="flex-1" disabled={submitting}>
                     {submitting ? (

@@ -219,16 +219,20 @@ export interface MonthlyBudget {
 }
 
 // Типы для депозитов
+// index.ts
+
 export interface Deposit {
   _id?: string;
   id?: string;
   userId: string;
-  name?: string; // НОВОЕ ПОЛЕ
+  name?: string;
   bankName: string;
   accountNumber: string;
   amount: number;
   currentBalance: number;
   interestRate: number;
+  // ДОБАВИТЬ ЭТУ СТРОКУ:
+  targetAmount?: number; 
   startDate: string | Date;
   endDate: string | Date;
   type: 'fixed' | 'savings' | 'investment' | 'spending';

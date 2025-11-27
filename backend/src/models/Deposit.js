@@ -72,6 +72,10 @@ const depositSchema = new mongoose.Schema(
     lastInterestAccrued: {
       type: Date
     },
+    targetAmount: {
+      type: Number,
+      min: [0, 'Целевая сумма не может быть отрицательной']
+    },
     createdAt: {
       type: Date,
       default: Date.now

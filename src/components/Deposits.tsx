@@ -70,6 +70,7 @@ function Deposits() {
   const [selectedDepositId, setSelectedDepositId] = useState<string>("");
   const [transactionType, setTransactionType] = useState<TransactionType>("deposit");
   const [selectedBankId, setSelectedBankId] = useState<string>("");
+  const [formType, setFormType] = useState<string>("fixed");
 
   const getItemId = (item: any): string => {
     return item._id || item.id || '';
@@ -121,6 +122,15 @@ function Deposits() {
       setLoading(false);
     }
   };
+
+  //Сброс или установка типа формы при открытии диалога
+  useEffect(() => {
+    if (editingDeposit) {
+      setFormType(editingDeposit.type);
+    } else {
+      setFormType("fixed");
+    }
+  }, [editingDeposit, isDepositDialogOpen]);
 
   const formatDateForInput = (date: string | Date | undefined): string => {
     if (!date) return '';
@@ -197,11 +207,18 @@ function Deposits() {
       const bankId = formData.get("bankId") as string;
       const selectedBank = banks.find(b => getItemId(b) === bankId);
 
+      // Получаем значение targetAmount
+      const rawTargetAmount = formData.get("targetAmount") as string;
+      const targetAmount = rawTargetAmount ? parseFloat(rawTargetAmount) : undefined;
+
+      const inputAmount = parseFloat(formData.get("amount") as string);
+
       const depositData: any = {
         name: (formData.get("name") as string)?.trim() || undefined,
         bankName: selectedBank?.name || (formData.get("bankName") as string)?.trim(),
         accountNumber: (formData.get("accountNumber") as string)?.trim(),
-        amount: parseFloat(formData.get("amount") as string),
+        amount: inputAmount,
+        targetAmount: targetAmount,
         interestRate: parseFloat(formData.get("interestRate") as string),
         startDate: formData.get("startDate") as string,
         endDate: formData.get("endDate") as string,
@@ -211,7 +228,12 @@ function Deposits() {
       };
 
       if (editingDeposit) {
-        depositData.currentBalance = editingDeposit.currentBalance;
+        // ИЗМЕНЕНИЕ ЗДЕСЬ:
+        // Раньше было: depositData.currentBalance = editingDeposit.currentBalance;
+        // Теперь мы обновляем текущий баланс значением из поля ввода, 
+        // чтобы пересчитался прогресс накопления
+        depositData.currentBalance = inputAmount;
+
         const depositId = getItemId(editingDeposit);
         await apiService.updateDeposit(depositId, depositData);
         addNotification({ message: "Депозит успешно обновлен", type: "success" });
@@ -425,6 +447,7 @@ function Deposits() {
                         placeholder="Например: Накопления на отпуск"
                       />
                     </div>
+
                     <div>
                       <Label htmlFor="bankId">Банк</Label>
                       <Select
@@ -445,6 +468,7 @@ function Deposits() {
                         </SelectContent>
                       </Select>
                     </div>
+
                     <div>
                       <Label htmlFor="accountNumber">Номер счета</Label>
                       <Input
@@ -455,9 +479,14 @@ function Deposits() {
                         placeholder="Номер депозитного счета"
                       />
                     </div>
+
                     <div>
                       <Label htmlFor="type">Тип депозита</Label>
-                      <Select name="type" defaultValue={editingDeposit?.type || "fixed"}>
+                      <Select
+                        name="type"
+                        value={formType}
+                        onValueChange={(val) => setFormType(val)}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Выберите тип" />
                         </SelectTrigger>
@@ -469,17 +498,35 @@ function Deposits() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div>
-                      <Label htmlFor="amount">Сумма депозита (₸)</Label>
-                      <Input
-                        id="amount"
-                        name="amount"
-                        type="number"
-                        step="0.01"
-                        required
-                        defaultValue={editingDeposit?.amount}
-                      />
+
+                    <div className={`grid gap-4 transition-all duration-300 ${formType === 'savings' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                      <div>
+                        <Label htmlFor="amount">Сумма депозита (₸)</Label>
+                        <Input
+                          id="amount"
+                          name="amount"
+                          type="number"
+                          step="0.01"
+                          required
+                          defaultValue={editingDeposit?.amount}
+                        />
+                      </div>
+
+                      {formType === 'savings' && (
+                        <div className="animate-in fade-in slide-in-from-right-2 duration-300">
+                          <Label htmlFor="targetAmount">Желаемая сумма (₸)</Label>
+                          <Input
+                            id="targetAmount"
+                            name="targetAmount"
+                            type="number"
+                            step="0.01"
+                            placeholder="Цель накопления"
+                            defaultValue={editingDeposit?.targetAmount}
+                          />
+                        </div>
+                      )}
                     </div>
+
                     <div>
                       <Label htmlFor="interestRate">Процентная ставка (%)</Label>
                       <Input
@@ -491,28 +538,32 @@ function Deposits() {
                         defaultValue={editingDeposit?.interestRate}
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="startDate">Дата открытия</Label>
-                      <Input
-                        id="startDate"
-                        name="startDate"
-                        type="date"
-                        className="date-input"
-                        required
-                        defaultValue={formatDateForInput(editingDeposit?.startDate)}
-                      />
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="startDate">Дата открытия</Label>
+                        <Input
+                          id="startDate"
+                          name="startDate"
+                          type="date"
+                          className="date-input"
+                          required
+                          defaultValue={formatDateForInput(editingDeposit?.startDate)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="endDate">Дата закрытия</Label>
+                        <Input
+                          id="endDate"
+                          name="endDate"
+                          type="date"
+                          className="date-input"
+                          required
+                          defaultValue={formatDateForInput(editingDeposit?.endDate)}
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <Label htmlFor="endDate">Дата закрытия</Label>
-                      <Input
-                        id="endDate"
-                        name="endDate"
-                        type="date"
-                        className="date-input"
-                        required
-                        defaultValue={formatDateForInput(editingDeposit?.endDate)}
-                      />
-                    </div>
+
                     <div className="flex items-center space-x-2">
                       <Checkbox
                         id="autoRenewal"
@@ -521,6 +572,7 @@ function Deposits() {
                       />
                       <Label htmlFor="autoRenewal">Автоматическое продление</Label>
                     </div>
+
                     <div>
                       <Label htmlFor="description">Описание</Label>
                       <Textarea
@@ -530,6 +582,7 @@ function Deposits() {
                         placeholder="Дополнительная информация"
                       />
                     </div>
+
                     <div className="flex gap-2">
                       <Button type="submit" className="flex-1">
                         {editingDeposit ? "Обновить" : "Добавить"}
@@ -550,6 +603,7 @@ function Deposits() {
                 </DialogContent>
               </Dialog>
             </CardHeader>
+
             <CardContent>
               <div className="space-y-4">
                 {deposits.length === 0 ? (
@@ -564,6 +618,10 @@ function Deposits() {
                     const daysToMaturity = calculateDaysToMaturity(deposit);
                     const accruedInterest = calculateAccruedInterest(deposit);
                     const isMatured = daysToMaturity <= 0;
+                    const hasTarget = deposit.type === 'savings' && deposit.targetAmount && deposit.targetAmount > 0;
+                    const progressPercent = hasTarget
+                      ? Math.min(100, (deposit.currentBalance / (deposit.targetAmount || 1)) * 100)
+                      : 0;
 
                     const typeNames: Record<DepositType, string> = {
                       fixed: "Срочный",
@@ -660,6 +718,31 @@ function Deposits() {
                           </div>
                         </div>
 
+                        {hasTarget && (
+                          <div className="mb-4 bg-muted/30 p-3 rounded-md">
+                            <div className="flex justify-between items-end mb-2">
+                              <div>
+                                <span className="text-sm font-medium text-green-700 dark:text-green-400">Цель накопления</span>
+                                <div className="text-xs text-muted-foreground">
+                                  Осталось накопить: {Math.max(0, (deposit.targetAmount || 0) - deposit.currentBalance).toLocaleString("kk-KZ")} ₸
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-sm font-bold">{progressPercent.toFixed(1)}%</span>
+                                <div className="text-xs text-muted-foreground">
+                                  из {deposit.targetAmount?.toLocaleString("kk-KZ")} ₸
+                                </div>
+                              </div>
+                            </div>
+                            <div className="h-2.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-green-500 to-emerald-600 transition-all duration-500 ease-out"
+                                style={{ width: `${progressPercent}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-muted-foreground">
                             {deposit.startDate ? new Date(deposit.startDate).toLocaleDateString("ru-RU") : "Не указана"} - {deposit.endDate ? new Date(deposit.endDate).toLocaleDateString("ru-RU") : "Не указана"}
@@ -685,7 +768,6 @@ function Deposits() {
             </CardContent>
           </Card>
 
-          {/* Transaction Dialog */}
           <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
             <DialogContent className="max-w-md">
               <DialogHeader>
@@ -720,14 +802,11 @@ function Deposits() {
                       <SelectContent>
                         <SelectItem value="cash">Банкомат (наличка)</SelectItem>
                         {availableIncomes.map(income => {
-                          // Получаем название категории из загруженных данных
                           let categoryName = "Другое";
 
                           if (typeof income.type === 'object' && income.type !== null) {
-                            // Если type уже populate (объект с полями)
                             categoryName = income.type.name;
                           } else if (typeof income.type === 'string') {
-                            // Если type это ID, ищем категорию в списке
                             const category = incomeCategories.find(c =>
                               (c._id === income.type) || (c.id === income.type)
                             );
@@ -765,6 +844,7 @@ function Deposits() {
                     </p>
                   )}
                 </div>
+
                 <div>
                   <Label htmlFor="transactionDate">Дата транзакции</Label>
                   <Input
@@ -776,6 +856,7 @@ function Deposits() {
                     defaultValue={new Date().toISOString().split('T')[0]}
                   />
                 </div>
+
                 <div>
                   <Label htmlFor="description">Описание</Label>
                   <Textarea
@@ -784,6 +865,7 @@ function Deposits() {
                     placeholder="Описание транзакции"
                   />
                 </div>
+
                 <div className="flex gap-2">
                   <Button type="submit" className="flex-1">
                     Добавить транзакцию
