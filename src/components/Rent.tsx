@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Building, Plus, Edit, Trash2, DollarSign, Calendar, FileText, Download, Eye, X, Loader2, AlertCircle } from "lucide-react";
@@ -157,7 +157,7 @@ function Rent() {
         loadUtilityTypes(),
         loadAvailableIncomes(),
         loadAvailableDeposits(),
-        loadIncomeCategories() // ДОБАВИТЬ
+        loadIncomeCategories()
       ]);
     } catch (err: any) {
       console.error("Error loading data:", err);
@@ -166,6 +166,23 @@ function Rent() {
     } finally {
       setLoading(false);
     }
+  };
+  // Вспомогательная функция для конвертации Base64 в Blob
+  const dataURItoBlob = (dataURI: string) => {
+    // Разбиваем строку на метаданные и сами данные
+    const byteString = atob(dataURI.split(',')[1]);
+    const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+
+    // Создаем массив байтов
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+
+    for (let i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+
+    // Возвращаем Blob объект
+    return new Blob([ab], { type: mimeString });
   };
 
   const loadIncomeCategories = async () => {
@@ -176,6 +193,22 @@ function Rent() {
       console.error("Error loading income categories:", error);
       setIncomeCategories([]);
     }
+  };
+
+  // 1. KPI: Замороженные депозиты (сумма залогов активных объектов)
+  const calculateFrozenDeposits = () => {
+    return properties
+      .filter(p => p.status === 'active')
+      .reduce((sum, p) => sum + p.deposit, 0);
+  };
+
+  // 2. KPI: Всего потрачено за все время (LTV)
+  const calculateTotalSpent = () => {
+    // Сумма всех оплаченных платежей
+    const paymentsTotal = payments
+      .filter(p => p.status === 'paid')
+      .reduce((sum, p) => sum + p.amount, 0);
+    return paymentsTotal;
   };
 
   const getCategoryName = (income: AvailableIncome): string => {
@@ -404,6 +437,7 @@ function Rent() {
       setSubmitting(false);
     }
   };
+
   // Обработчик создания платежа
   const handlePaymentSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -558,10 +592,33 @@ function Rent() {
     link.click();
   };
 
-  // Просмотр квитанции
+// Просмотр квитанции
   const viewReceipt = (payment: RentPayment) => {
-    if (!payment.receiptFile) return;
-    window.open(payment.receiptFile, "_blank");
+    if (!payment.receiptFile) {
+      toast.error("Файл квитанции отсутствует");
+      return;
+    }
+
+    try {
+      // 1. Преобразуем Base64 в Blob
+      const blob = dataURItoBlob(payment.receiptFile);
+      
+      // 2. Создаем временную ссылку на этот Blob
+      const url = URL.createObjectURL(blob);
+      
+      // 3. Открываем эту ссылку в новой вкладке
+      const newWindow = window.open(url, "_blank");
+      
+      if (!newWindow) {
+        toast.error("Браузер заблокировал всплывающее окно. Разрешите всплывающие окна для этого сайта.");
+      }
+
+      setTimeout(() => URL.revokeObjectURL(url), 60000); 
+
+    } catch (error) {
+      console.error("Ошибка при открытии файла:", error);
+      toast.error("Не удалось открыть файл. Возможно, он поврежден.");
+    }
   };
 
   // Функции для работы с коммунальными услугами
@@ -630,6 +687,14 @@ function Rent() {
       }
     }
   };
+
+  useEffect(() => {
+    if (payments.length > 0 || properties.length > 0) {
+      console.log('=== ОБЩАЯ ОТЛАДКА ===');
+      console.log('Payments:', payments);
+      console.log('Properties:', properties);
+    }
+  }, [payments, properties]);
 
   useEffect(() => {
     if (editingProperty && isPropertyDialogOpen) {
@@ -708,6 +773,11 @@ function Rent() {
     if (!utilityTypeId) return null;
     const utilityType = utilityTypes.find(ut => ut._id === utilityTypeId);
     return utilityType?.name;
+  };
+
+  // Helper function for analytics
+  const getUtilitySeasonalityData = () => {
+    return payments.filter(p => p.paymentType === 'utilities' && p.status === 'paid');
   };
 
   if (error && properties.length === 0) {
@@ -916,7 +986,7 @@ function Rent() {
                               <div className="flex-1">
                                 <Select
                                   value={item.utilityTypeId || ""}
-                                  onValueChange={(value) => updateUtilityItem(index, 'utilityTypeId', value)}
+                                  tickFormatter={(value: number) => `${value / 1000}к`}
                                 >
                                   <SelectTrigger>
                                     <SelectValue placeholder="Выберите услугу" />
@@ -1470,77 +1540,80 @@ function Rent() {
         </TabsContent>
 
         <TabsContent value="analytics">
-          <Card className="rounded-2xl">
-            <CardHeader>
-              <CardTitle>Аналитика расходов на аренду</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {getMonthlyExpenseData().length === 0 ? (
-                <div className="text-center py-12">
-                  <p className="text-muted-foreground">
-                    Недостаточно данных для построения графика. Добавьте платежи для просмотра аналитики.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-6">
+          <div className="space-y-6">
+
+            {/* Блок KPI показателей */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="rounded-xl border bg-card text-card-foreground shadow-sm">
+                <CardContent className="p-4 flex flex-col justify-between h-full">
                   <div>
-                    <h4 className="text-lg font-semibold mb-4">Расходы по месяцам</h4>
-                    <ResponsiveContainer width="100%" height={350}>
+                    <p className="text-sm font-medium text-muted-foreground">Всего потрачено (LTV)</p>
+                    <h3 className="text-2xl font-bold mt-1">{calculateTotalSpent().toLocaleString("ru-RU")} ₸</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">Общая сумма всех расходов за все время</p>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-xl border bg-card text-card-foreground shadow-sm">
+                <CardContent className="p-4 flex flex-col justify-between h-full">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Замороженные депозиты</p>
+                    <h3 className="text-2xl font-bold mt-1 text-blue-600">{calculateFrozenDeposits().toLocaleString("ru-RU")} ₸</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">Сумма залогов у активных арендодателей</p>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-xl border bg-card text-card-foreground shadow-sm">
+                <CardContent className="p-4 flex flex-col justify-between h-full">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Средняя коммуналка</p>
+                    <h3 className="text-2xl font-bold mt-1 text-orange-600">
+                      {(() => {
+                        const utilData = getUtilitySeasonalityData();
+                        const total = utilData.reduce((acc, item) => acc + item.amount, 0);
+                        const avg = utilData.length ? total / utilData.length : 0;
+                        return Math.round(avg).toLocaleString("ru-RU");
+                      })()} ₸
+                    </h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">Средний чек за последние месяцы</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Верхний ряд графиков: Расходы по месяцам + Структура */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Старый график (Барчарт) - занимает 2/3 ширины */}
+              <Card className="rounded-2xl lg:col-span-2">
+                <CardHeader>
+                  <CardTitle>Динамика расходов по месяцам</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {getMonthlyExpenseData().length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
                       <BarChart data={getMonthlyExpenseData()}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis
-                          dataKey="month"
-                          className="text-xs"
-                        />
-                        <YAxis
-                          className="text-xs"
-                        />
+                        <XAxis dataKey="month" className="text-xs" />
+                        <YAxis className="text-xs" tickFormatter={(value) => `${value / 1000}к`} />
                         <Tooltip
                           formatter={(value: number) => `${value.toLocaleString("ru-RU")} ₸`}
-                          contentStyle={{
-                            borderRadius: '8px',
-                            border: '1px solid var(--border))',
-                            backgroundColor: 'var(--background)'
-                          }}
+                          contentStyle={{ borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)' }}
                         />
                         <Legend />
                         <Bar dataKey="rent" fill="var(--chart-1)" name="Аренда" stackId="a" />
                         <Bar dataKey="utilities" fill="var(--chart-2)" name="Коммуналка" stackId="a" />
                       </BarChart>
                     </ResponsiveContainer>
-                  </div>
-
-                  <Separator />
-
-                  <div>
-                    <h4 className="text-lg font-semibold mb-4">Детальная статистика</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {getMonthlyExpenseData().map((data, index) => (
-                        <div key={index} className="p-4 border rounded-lg hover:shadow-sm transition-shadow">
-                          <p className="text-sm font-medium text-muted-foreground mb-3">{data.month}</p>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm">Аренда:</span>
-                              <span className="text-sm font-medium">{data.rent.toLocaleString("ru-RU")} ₸</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm">Коммуналка:</span>
-                              <span className="text-sm font-medium">{data.utilities.toLocaleString("ru-RU")} ₸</span>
-                            </div>
-                            <Separator className="my-2" />
-                            <div className="flex justify-between items-center">
-                              <span className="font-semibold">Итого:</span>
-                              <span className="font-bold text-lg">{data.total.toLocaleString("ru-RU")} ₸</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                  ) : (
+                    <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                      Нет данных для отображения
                     </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
