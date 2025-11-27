@@ -29,22 +29,22 @@ const INITIAL_FORM_STATE = {
 
 function MonthlyExpenses() {
   const { addNotification } = useAppActions();
-  
+
   // --- ДАННЫЕ ---
   const [budgets, setBudgets] = useState<MonthlyBudget[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [incomeCategories, setIncomeCategories] = useState<any[]>([]);
   const [incomes, setIncomes] = useState<any[]>([]);
   const [deposits, setDeposits] = useState<any[]>([]);
-  
+
   // --- UI СОСТОЯНИЕ ---
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // Состояния модальных окон
   const [isExpenseDialogOpen, setIsExpenseDialogOpen] = useState(false);
   const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
-  
+
   // Состояние для ЕДИНОГО модального окна оплаты
   const [paymentModal, setPaymentModal] = useState<{
     isOpen: boolean;
@@ -84,7 +84,7 @@ function MonthlyExpenses() {
       }
 
       const budget = budgetMap.get(key)!;
-      
+
       const mappedExpense: MonthlyExpense = {
         id: expense._id || expense.id,
         categoryId: expense.category?._id || expense.category?.id || expense.category,
@@ -129,7 +129,7 @@ function MonthlyExpenses() {
       const [expensesRes, categoriesRes, incomesRes, depositsRes, incomeCategoriesRes] = await Promise.all([
         apiService.getMonthlyExpenses(),
         apiService.getCategories('expense'),
-        apiService.getAvailableIncomes(), 
+        apiService.getAvailableIncomes(),
         apiService.getDeposits(),
         apiService.getCategories('income')
       ]);
@@ -138,7 +138,7 @@ function MonthlyExpenses() {
       if (incomesRes.success) setIncomes(incomesRes.data);
       if (depositsRes.success) setDeposits(depositsRes.data);
       if (incomeCategoriesRes.success) setIncomeCategories(incomeCategoriesRes.data);
-      
+
       if (expensesRes.success) {
         processExpensesToBudgets(expensesRes.data);
       }
@@ -147,11 +147,11 @@ function MonthlyExpenses() {
     } finally {
       setIsLoading(false);
     }
-  }, [processExpensesToBudgets]); 
+  }, [processExpensesToBudgets]);
 
   useEffect(() => {
     fetchData();
-  }, []); 
+  }, []);
 
   // 3. Управление формой
   useEffect(() => {
@@ -178,7 +178,7 @@ function MonthlyExpenses() {
     const currentMonth = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
     return budgets.find(budget => `${budget.year}-${budget.month.padStart(2, '0')}` === currentMonth);
   };
-  
+
   const getFutureBudgets = () => {
     const now = new Date();
     const currentYearMonth = now.getFullYear() * 12 + now.getMonth();
@@ -187,7 +187,7 @@ function MonthlyExpenses() {
       const budgetYearMonth = budget.year * 12 + (parseInt(budget.month) - 1);
       return budgetYearMonth > currentYearMonth;
     }).sort((a, b) => {
-       return (a.year * 12 + parseInt(a.month)) - (b.year * 12 + parseInt(b.month));
+      return (a.year * 12 + parseInt(a.month)) - (b.year * 12 + parseInt(b.month));
     });
   };
 
@@ -204,7 +204,7 @@ function MonthlyExpenses() {
   const getOverdueExpensesCount = () => {
     const currentBudget = getCurrentBudget();
     if (!currentBudget) return 0;
-    
+
     const today = new Date();
     return currentBudget.expenses.filter(expense => {
       const dueDate = new Date(expense.dueDate);
@@ -231,7 +231,7 @@ function MonthlyExpenses() {
       const category = categories.find(cat => (cat.id || cat._id) === expense.categoryId);
       const categoryName = category?.name || "Неизвестно";
       const categoryColor = category?.color || "#6b7280";
-      
+
       if (!acc[categoryName]) {
         acc[categoryName] = { name: categoryName, value: 0, color: categoryColor };
       }
@@ -249,13 +249,13 @@ function MonthlyExpenses() {
     e.preventDefault();
     const formDataInput = new FormData(e.target as HTMLFormElement);
     const monthYear = formDataInput.get("monthYear") as string;
-    
+
     if (!monthYear) return;
 
     const [year, month] = monthYear.split("-");
     const newBudgetKey = `${year}-${month}`;
     const exists = budgets.some(b => `${b.year}-${b.month}` === newBudgetKey);
-    
+
     if (!exists) {
       const newBudget: MonthlyBudget = {
         id: newBudgetKey,
@@ -276,27 +276,27 @@ function MonthlyExpenses() {
 
   const handleExpenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (isSubmitting) return;
     setIsSubmitting(true);
 
     let calculatedDate;
-    
+
     if (selectedBudgetId) {
-        const [year, month] = selectedBudgetId.split('-');
-        calculatedDate = new Date(parseInt(year), parseInt(month), 0);
+      const [year, month] = selectedBudgetId.split('-');
+      calculatedDate = new Date(parseInt(year), parseInt(month), 0);
     } else {
-        const now = new Date();
-        calculatedDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const now = new Date();
+      calculatedDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     }
-    
+
     calculatedDate.setHours(12, 0, 0, 0);
 
     const expensePayload = {
       category: formData.categoryId,
       name: formData.name,
       amount: parseFloat(formData.plannedAmount),
-      dueDate: calculatedDate.toISOString(), 
+      dueDate: calculatedDate.toISOString(),
       isRecurring: formData.isRecurring,
       description: formData.description || undefined,
       sourceIncome: formData.incomeId !== "none" ? formData.incomeId : undefined,
@@ -317,14 +317,14 @@ function MonthlyExpenses() {
         await apiService.createMonthlyExpense(expensePayload);
         addNotification({ message: "Расход добавлен", type: "success" });
       }
-      
+
       await fetchData();
       setIsExpenseDialogOpen(false);
       setEditingExpense(null);
     } catch (error: any) {
-      addNotification({ 
-        message: error.response?.data?.message || "Ошибка сохранения расхода", 
-        type: "error" 
+      addNotification({
+        message: error.response?.data?.message || "Ошибка сохранения расхода",
+        type: "error"
       });
     } finally {
       setIsSubmitting(false);
@@ -333,21 +333,21 @@ function MonthlyExpenses() {
 
   // Функция оплаты
   const markExpenseAsPaid = async (
-    budgetId: string, 
-    expenseId: string, 
+    budgetId: string,
+    expenseId: string,
     paymentAmount: number,
     paymentDate: string,
     paymentDescription: string
   ) => {
     const budget = budgets.find(b => b.id === budgetId);
     const expense = budget?.expenses.find(e => e.id === expenseId);
-    
+
     if (!expense) return;
 
     // Расчет новой общей оплаченной суммы
     const oldActualAmount = expense.actualAmount || 0;
     const newActualAmount = oldActualAmount + paymentAmount;
-    
+
     const isFullPayment = newActualAmount >= expense.plannedAmount;
     const newStatus = isFullPayment ? 'paid' : 'planned';
 
@@ -356,25 +356,25 @@ function MonthlyExpenses() {
         status: newStatus,
         actualAmount: newActualAmount,
         date: paymentDate,
-        description: paymentDescription 
+        description: paymentDescription
       });
-      
-      addNotification({ 
-        message: isFullPayment ? "Расход полностью оплачен" : "Частичная оплата сохранена", 
-        type: "success" 
+
+      addNotification({
+        message: isFullPayment ? "Расход полностью оплачен" : "Частичная оплата сохранена",
+        type: "success"
       });
       fetchData();
     } catch (error: any) {
-      addNotification({ 
-         message: error.response?.data?.message || "Ошибка при оплате", 
-         type: "error" 
+      addNotification({
+        message: error.response?.data?.message || "Ошибка при оплате",
+        type: "error"
       });
     }
   };
 
   const deleteExpense = async (budgetId: string, expenseId: string) => {
     if (!window.confirm("Вы уверены, что хотите удалить этот расход?")) return;
-    
+
     try {
       await apiService.deleteMonthlyExpense(expenseId);
       addNotification({ message: "Расход удален", type: "info" });
@@ -401,7 +401,7 @@ function MonthlyExpenses() {
           const category = categories.find(cat => (cat.id || cat._id) === expense.categoryId);
           const isOverdue = new Date(expense.dueDate) < new Date() && expense.status === "planned";
           const isPartial = expense.actualAmount && expense.actualAmount > 0 && expense.actualAmount < expense.plannedAmount && expense.status === 'planned';
-          
+
           const actual = expense.actualAmount || 0;
           const remaining = expense.plannedAmount - actual;
           const isLowBalance = remaining > 0 && remaining <= 5000 && expense.status !== 'paid';
@@ -422,8 +422,8 @@ function MonthlyExpenses() {
                 <div className="flex items-center gap-2">
                   {/* КНОПКА ОТКРЫТИЯ МОДАЛЬНОГО ОКНА ОПЛАТЫ */}
                   {showPayAction && expense.status === "planned" && (
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       variant="outline"
                       onClick={() => setPaymentModal({
                         isOpen: true,
@@ -455,13 +455,13 @@ function MonthlyExpenses() {
                   </Button>
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mt-3">
                 <div>
                   <p className="text-xs text-muted-foreground uppercase mb-1">Категория</p>
                   <p className="font-medium">{category?.name || "Неизвестно"}</p>
                 </div>
-                
+
                 <div>
                   <p className="text-xs text-muted-foreground uppercase mb-1">Заложено</p>
                   <p className="font-medium">
@@ -470,29 +470,29 @@ function MonthlyExpenses() {
                 </div>
 
                 <div>
-                   <p className="text-xs text-muted-foreground uppercase mb-1">Потратил</p>
-                   <p className="font-medium">
-                      {actual > 0 ? `${actual.toLocaleString("kk-KZ")} ₸` : "-"}
-                   </p>
+                  <p className="text-xs text-muted-foreground uppercase mb-1">Потратил</p>
+                  <p className="font-medium">
+                    {actual > 0 ? `${actual.toLocaleString("kk-KZ")} ₸` : "-"}
+                  </p>
                 </div>
 
                 <div>
-                   <p className="text-xs text-muted-foreground uppercase mb-1">Остаток</p>
-                   {expense.status !== 'paid' ? (
-                       <p className={`font-medium ${isLowBalance ? 'text-red-600 font-bold' : 'text-muted-foreground'}`}>
-                         {remaining.toLocaleString("kk-KZ")} ₸
-                       </p>
-                   ) : (
-                       <p className="text-green-600 font-medium text-xs flex items-center mt-0.5">
-                          <CheckCircle className="w-3 h-3 mr-1"/> Оплачено
-                       </p>
-                   )}
+                  <p className="text-xs text-muted-foreground uppercase mb-1">Остаток</p>
+                  {expense.status !== 'paid' ? (
+                    <p className={`font-medium ${isLowBalance ? 'text-red-600 font-bold' : 'text-muted-foreground'}`}>
+                      {remaining.toLocaleString("kk-KZ")} ₸
+                    </p>
+                  ) : (
+                    <p className="text-green-600 font-medium text-xs flex items-center mt-0.5">
+                      <CheckCircle className="w-3 h-3 mr-1" /> Оплачено
+                    </p>
+                  )}
                 </div>
               </div>
-              
+
               {expense.description && (
                 <div className="mt-3 pt-2 border-t border-dashed">
-                   <p className="text-sm text-muted-foreground">{expense.description}</p>
+                  <p className="text-sm text-muted-foreground">{expense.description}</p>
                 </div>
               )}
             </div>
@@ -559,20 +559,20 @@ function MonthlyExpenses() {
             <CardContent>
               {(() => {
                 const currentBudget = getCurrentBudget();
-                
+
                 if (!currentBudget || currentBudget.expenses.length === 0) {
                   return (
                     <div className="text-center py-8">
                       <Wallet className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                       <p className="text-muted-foreground">Нет расходов на текущий месяц</p>
-                      <Button 
-                        variant="link" 
+                      <Button
+                        variant="link"
                         onClick={() => {
-                           const now = new Date();
-                           const key = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
-                           if (!currentBudget) {
-                               setIsBudgetDialogOpen(true);
-                           }
+                          const now = new Date();
+                          const key = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
+                          if (!currentBudget) {
+                            setIsBudgetDialogOpen(true);
+                          }
                         }}
                       >
                         Создать бюджет
@@ -581,8 +581,8 @@ function MonthlyExpenses() {
                   );
                 }
 
-                const budgetProgress = currentBudget.totalPlanned > 0 
-                  ? (currentBudget.totalActual / currentBudget.totalPlanned) * 100 
+                const budgetProgress = currentBudget.totalPlanned > 0
+                  ? (currentBudget.totalActual / currentBudget.totalPlanned) * 100
                   : 0;
 
                 return (
@@ -624,8 +624,8 @@ function MonthlyExpenses() {
                   budgets
                     .sort((a, b) => new Date(`${b.year}-${b.month}`).getTime() - new Date(`${a.year}-${a.month}`).getTime())
                     .map(budget => {
-                      const budgetProgress = budget.totalPlanned > 0 
-                        ? (budget.totalActual / budget.totalPlanned) * 100 
+                      const budgetProgress = budget.totalPlanned > 0
+                        ? (budget.totalActual / budget.totalPlanned) * 100
                         : 0;
 
                       return (
@@ -679,8 +679,8 @@ function MonthlyExpenses() {
               <CardTitle>Планирование бюджета</CardTitle>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setIsBudgetDialogOpen(true)}>
-                    <CalendarDays className="w-4 h-4 mr-2" />
-                    Создать бюджет
+                  <CalendarDays className="w-4 h-4 mr-2" />
+                  Создать бюджет
                 </Button>
               </div>
             </CardHeader>
@@ -690,71 +690,71 @@ function MonthlyExpenses() {
                 const currentBudget = getCurrentBudget();
                 if (!currentBudget) {
                   return (
-                     <div className="text-center py-8 border rounded-lg border-dashed">
-                        <p className="text-muted-foreground mb-2">Бюджет на текущий месяц не создан.</p>
-                        <Button variant="link" onClick={() => setIsBudgetDialogOpen(true)}>Создать сейчас</Button>
-                     </div>
+                    <div className="text-center py-8 border rounded-lg border-dashed">
+                      <p className="text-muted-foreground mb-2">Бюджет на текущий месяц не создан.</p>
+                      <Button variant="link" onClick={() => setIsBudgetDialogOpen(true)}>Создать сейчас</Button>
+                    </div>
                   );
                 }
 
                 return (
-                   <div className="space-y-4">
-                      <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border-l-4 border-blue-500">
-                         <div>
-                           <h3 className="font-bold text-lg">Текущий месяц ({currentBudget.month}/{currentBudget.year})</h3>
-                           <p className="text-sm text-muted-foreground">Всего запланировано: {currentBudget.totalPlanned.toLocaleString("kk-KZ")} ₸</p>
-                         </div>
-                         <Button 
-                           size="sm" 
-                           onClick={() => {
-                             setSelectedBudgetId(currentBudget.id);
-                             setEditingExpense(null);
-                             setFormData(INITIAL_FORM_STATE);
-                             setIsExpenseDialogOpen(true);
-                           }}
-                         >
-                           <Plus className="w-4 h-4 mr-2" /> Добавить
-                         </Button>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border-l-4 border-blue-500">
+                      <div>
+                        <h3 className="font-bold text-lg">Текущий месяц ({currentBudget.month}/{currentBudget.year})</h3>
+                        <p className="text-sm text-muted-foreground">Всего запланировано: {currentBudget.totalPlanned.toLocaleString("kk-KZ")} ₸</p>
                       </div>
-                      {renderExpenseList(currentBudget.expenses, currentBudget.id, false)}
-                   </div>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setSelectedBudgetId(currentBudget.id);
+                          setEditingExpense(null);
+                          setFormData(INITIAL_FORM_STATE);
+                          setIsExpenseDialogOpen(true);
+                        }}
+                      >
+                        <Plus className="w-4 h-4 mr-2" /> Добавить
+                      </Button>
+                    </div>
+                    {renderExpenseList(currentBudget.expenses, currentBudget.id, false)}
+                  </div>
                 );
               })()}
 
               {/* БУДУЩИЕ БЮДЖЕТЫ */}
               {(() => {
-                  const futureBudgets = getFutureBudgets();
-                  
-                  if (futureBudgets.length > 0) {
-                      return (
-                          <div className="space-y-6 pt-6 border-t">
-                              <h3 className="text-xl font-semibold text-muted-foreground">Будущие периоды</h3>
-                              {futureBudgets.map(budget => (
-                                  <div key={budget.id} className="space-y-4">
-                                      <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border-l-4 border-indigo-400">
-                                          <div>
-                                              <h3 className="font-bold text-lg">{budget.month}/{budget.year}</h3>
-                                              <p className="text-sm text-muted-foreground">План: {budget.totalPlanned.toLocaleString("kk-KZ")} ₸</p>
-                                          </div>
-                                          <Button 
-                                            size="sm" 
-                                            onClick={() => {
-                                              setSelectedBudgetId(budget.id);
-                                              setEditingExpense(null);
-                                              setFormData(INITIAL_FORM_STATE);
-                                              setIsExpenseDialogOpen(true);
-                                            }}
-                                          >
-                                            <Plus className="w-4 h-4 mr-2" /> Добавить
-                                          </Button>
-                                      </div>
-                                      {renderExpenseList(budget.expenses, budget.id, false)}
-                                  </div>
-                              ))}
+                const futureBudgets = getFutureBudgets();
+
+                if (futureBudgets.length > 0) {
+                  return (
+                    <div className="space-y-6 pt-6 border-t">
+                      <h3 className="text-xl font-semibold text-muted-foreground">Будущие периоды</h3>
+                      {futureBudgets.map(budget => (
+                        <div key={budget.id} className="space-y-4">
+                          <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border-l-4 border-indigo-400">
+                            <div>
+                              <h3 className="font-bold text-lg">{budget.month}/{budget.year}</h3>
+                              <p className="text-sm text-muted-foreground">План: {budget.totalPlanned.toLocaleString("kk-KZ")} ₸</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setSelectedBudgetId(budget.id);
+                                setEditingExpense(null);
+                                setFormData(INITIAL_FORM_STATE);
+                                setIsExpenseDialogOpen(true);
+                              }}
+                            >
+                              <Plus className="w-4 h-4 mr-2" /> Добавить
+                            </Button>
                           </div>
-                      )
-                  }
-                  return null;
+                          {renderExpenseList(budget.expenses, budget.id, false)}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                }
+                return null;
               })()}
             </CardContent>
           </Card>
@@ -773,7 +773,16 @@ function MonthlyExpenses() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" />
                       <YAxis tickFormatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
-                      <Tooltip formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
+                      <Tooltip
+                        formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
+                        contentStyle={{
+                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
+                          borderRadius: '12px',       // Закругление углов
+                          border: '1px solid #374151', // Цвет рамки
+                          color: '#fff'               // Цвет текста (если нужно)
+                        }}
+                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                      />
                       <Bar dataKey="planned" fill="#3b82f6" name="Планы" />
                       <Bar dataKey="actual" fill="#10b981" name="Факт" />
                       <Legend />
@@ -809,7 +818,16 @@ function MonthlyExpenses() {
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
+                      <Tooltip
+                        formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
+                        contentStyle={{
+                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
+                          borderRadius: '12px',       // Закругление углов
+                          border: '1px solid #374151', // Цвет рамки
+                          color: '#fff'               // Цвет текста (если нужно)
+                        }}
+                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                      />
                       <Legend />
                     </PieChart>
                   </ResponsiveContainer>
@@ -825,19 +843,19 @@ function MonthlyExpenses() {
       </Tabs>
 
       {/* --- МОДАЛЬНОЕ ОКНО ОПЛАТЫ (ЕДИНОЕ) --- */}
-      <Dialog 
-        open={paymentModal.isOpen} 
+      <Dialog
+        open={paymentModal.isOpen}
         onOpenChange={(open) => setPaymentModal(prev => ({ ...prev, isOpen: open }))}
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>
-              {paymentModal.expense?.actualAmount && paymentModal.expense.actualAmount > 0 
-                ? "Добавить оплату" 
+              {paymentModal.expense?.actualAmount && paymentModal.expense.actualAmount > 0
+                ? "Добавить оплату"
                 : "Внести оплату"}
             </DialogTitle>
           </DialogHeader>
-          
+
           {paymentModal.expense && (
             <form onSubmit={async (e) => {
               e.preventDefault();
@@ -845,79 +863,79 @@ function MonthlyExpenses() {
               const amount = parseFloat(formDataInput.get("amount") as string);
               const date = formDataInput.get("date") as string;
               const description = formDataInput.get("description") as string;
-              
+
               if (paymentModal.expense) {
-                 await markExpenseAsPaid(
-                   paymentModal.budgetId, 
-                   paymentModal.expense.id, 
-                   amount, 
-                   date, 
-                   description
-                 );
-                 // ЗАКРЫТИЕ ОКНА ПОСЛЕ УСПЕШНОЙ ОПЛАТЫ
-                 setPaymentModal({ isOpen: false, expense: null, budgetId: "" });
+                await markExpenseAsPaid(
+                  paymentModal.budgetId,
+                  paymentModal.expense.id,
+                  amount,
+                  date,
+                  description
+                );
+                // ЗАКРЫТИЕ ОКНА ПОСЛЕ УСПЕШНОЙ ОПЛАТЫ
+                setPaymentModal({ isOpen: false, expense: null, budgetId: "" });
               }
             }}>
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="amount">Сумма оплаты (₸)</Label>
                   {(() => {
-                     const actual = paymentModal.expense.actualAmount || 0;
-                     const remaining = paymentModal.expense.plannedAmount - actual;
-                     const isPartial = actual > 0 && actual < paymentModal.expense.plannedAmount;
-                     const defaultAmount = remaining > 0 ? remaining : paymentModal.expense.plannedAmount;
-                     
-                     return (
-                       <>
-                        <Input 
-                          id="amount" 
-                          name="amount" 
-                          type="number" 
-                          step="0.01" 
-                          required 
+                    const actual = paymentModal.expense.actualAmount || 0;
+                    const remaining = paymentModal.expense.plannedAmount - actual;
+                    const isPartial = actual > 0 && actual < paymentModal.expense.plannedAmount;
+                    const defaultAmount = remaining > 0 ? remaining : paymentModal.expense.plannedAmount;
+
+                    return (
+                      <>
+                        <Input
+                          id="amount"
+                          name="amount"
+                          type="number"
+                          step="0.01"
+                          required
                           defaultValue={defaultAmount}
                           className="text-lg font-semibold"
                         />
                         {isPartial && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Остаток к оплате: <span className="font-semibold">{remaining.toLocaleString("kk-KZ")} ₸</span>
-                            </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Остаток к оплате: <span className="font-semibold">{remaining.toLocaleString("kk-KZ")} ₸</span>
+                          </p>
                         )}
-                       </>
-                     );
+                      </>
+                    );
                   })()}
                 </div>
 
                 <div>
-                    <Label htmlFor="date">Дата оплаты</Label>
-                    <Input 
-                        id="date" 
-                        name="date" 
-                        type="date" 
-                        className="date-input"
-                        required 
-                        defaultValue={new Date().toISOString().split('T')[0]}
-                    />
+                  <Label htmlFor="date">Дата оплаты</Label>
+                  <Input
+                    id="date"
+                    name="date"
+                    type="date"
+                    className="date-input"
+                    required
+                    defaultValue={new Date().toISOString().split('T')[0]}
+                  />
                 </div>
 
                 <div>
-                    <Label htmlFor="description">Комментарий</Label>
-                    {(() => {
-                         const actual = paymentModal.expense.actualAmount || 0;
-                         // --- АВТОМАТИЧЕСКОЕ ЗАПОЛНЕНИЕ ---
-                         // Если уже были платежи (actual > 0), то "Частичная оплата"
-                         // Иначе "Полная оплата"
-                         const defaultDesc = actual > 0 ? "Частичная оплата" : "Полная оплата";
-                         
-                         return (
-                            <Input 
-                                id="description" 
-                                name="description" 
-                            />
-                         )
-                    })()}
+                  <Label htmlFor="description">Комментарий</Label>
+                  {(() => {
+                    const actual = paymentModal.expense.actualAmount || 0;
+                    // --- АВТОМАТИЧЕСКОЕ ЗАПОЛНЕНИЕ ---
+                    // Если уже были платежи (actual > 0), то "Частичная оплата"
+                    // Иначе "Полная оплата"
+                    const defaultDesc = actual > 0 ? "Частичная оплата" : "Полная оплата";
+
+                    return (
+                      <Input
+                        id="description"
+                        name="description"
+                      />
+                    )
+                  })()}
                 </div>
-                
+
                 <Button type="submit" className="w-full">
                   Подтвердить оплату
                 </Button>
@@ -933,13 +951,13 @@ function MonthlyExpenses() {
           <DialogHeader>
             <DialogTitle>{editingExpense ? "Редактировать расход" : "Добавить расход"}</DialogTitle>
           </DialogHeader>
-          
+
           <form onSubmit={handleExpenseSubmit} className="space-y-4">
             <div>
               <Label htmlFor="categoryId">Категория</Label>
-              <Select 
-                value={formData.categoryId} 
-                onValueChange={(val: string) => setFormData({...formData, categoryId: val})}
+              <Select
+                value={formData.categoryId}
+                onValueChange={(val: string) => setFormData({ ...formData, categoryId: val })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Выберите категорию" />
@@ -956,33 +974,33 @@ function MonthlyExpenses() {
             </div>
             <div>
               <Label htmlFor="name">Название расхода</Label>
-              <Input 
-                id="name" 
-                name="name" 
-                required 
+              <Input
+                id="name"
+                name="name"
+                required
                 value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="Например: Продукты на неделю"
               />
             </div>
             <div>
               <Label htmlFor="plannedAmount">Запланированная сумма (₸)</Label>
-              <Input 
-                id="plannedAmount" 
-                name="plannedAmount" 
-                type="number" 
-                step="0.01" 
-                required 
+              <Input
+                id="plannedAmount"
+                name="plannedAmount"
+                type="number"
+                step="0.01"
+                required
                 value={formData.plannedAmount}
-                onChange={(e) => setFormData({...formData, plannedAmount: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, plannedAmount: e.target.value })}
               />
             </div>
-            
+
             <div>
               <Label htmlFor="incomeId">Источник средств</Label>
-              <Select 
+              <Select
                 value={formData.incomeId}
-                onValueChange={(val: string) => setFormData({...formData, incomeId: val})}
+                onValueChange={(val: string) => setFormData({ ...formData, incomeId: val })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Выберите доход" />
@@ -1008,7 +1026,7 @@ function MonthlyExpenses() {
 
                       return id ? (
                         <SelectItem key={String(id)} value={String(id)}>
-                           {income.source} ({categoryName}) - Доступно: {income.availableAmount.toLocaleString("kk-KZ")} ₸ (из {income.amount.toLocaleString("kk-KZ")} ₸) - {new Date(income.date).toLocaleDateString("ru-RU")}
+                          {income.source} ({categoryName}) - Доступно: {income.availableAmount.toLocaleString("kk-KZ")} ₸ (из {income.amount.toLocaleString("kk-KZ")} ₸) - {new Date(income.date).toLocaleDateString("ru-RU")}
                         </SelectItem>
                       ) : null;
                     })}
@@ -1018,12 +1036,12 @@ function MonthlyExpenses() {
                 Средства будут списаны из источника и зарезервированы на депозите.
               </p>
             </div>
-            
+
             <div>
               <Label htmlFor="accountId">Место хранения средств (Депозит)</Label>
-              <Select 
+              <Select
                 value={formData.accountId}
-                onValueChange={(val: string) => setFormData({...formData, accountId: val})}
+                onValueChange={(val: string) => setFormData({ ...formData, accountId: val })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Выберите счет" />
@@ -1035,10 +1053,10 @@ function MonthlyExpenses() {
                     .map((deposit) => {
                       const id = getItemId(deposit);
                       const displayName = deposit.name ? `${deposit.name} (${deposit.bankName})` : deposit.bankName;
-                      
+
                       return id ? (
                         <SelectItem key={String(id)} value={String(id)}>
-                           {displayName} - {deposit.currentBalance.toLocaleString("kk-KZ")} ₸
+                          {displayName} - {deposit.currentBalance.toLocaleString("kk-KZ")} ₸
                         </SelectItem>
                       ) : null;
                     })}
@@ -1048,22 +1066,22 @@ function MonthlyExpenses() {
                 Депозит, с которого будет произведена оплата (списание).
               </p>
             </div>
-            
+
             <div className="flex items-center space-x-2">
-              <Checkbox 
-                id="isRecurring" 
+              <Checkbox
+                id="isRecurring"
                 checked={formData.isRecurring}
-                onCheckedChange={(checked: boolean | string) => setFormData({...formData, isRecurring: !!checked})}
+                onCheckedChange={(checked: boolean | string) => setFormData({ ...formData, isRecurring: !!checked })}
               />
               <Label htmlFor="isRecurring">Регулярный расход</Label>
             </div>
             <div>
               <Label htmlFor="description">Описание</Label>
-              <Textarea 
-                id="description" 
-                name="description" 
+              <Textarea
+                id="description"
+                name="description"
                 value={formData.description}
-                onChange={(e) => setFormData({...formData, description: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="Дополнительная информация"
               />
             </div>
@@ -1072,9 +1090,9 @@ function MonthlyExpenses() {
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {isSubmitting ? "Сохранение..." : (editingExpense ? "Обновить" : "Добавить")}
               </Button>
-              <Button 
-                type="button" 
-                variant="outline" 
+              <Button
+                type="button"
+                variant="outline"
                 disabled={isSubmitting}
                 onClick={() => {
                   setIsExpenseDialogOpen(false);
@@ -1096,20 +1114,20 @@ function MonthlyExpenses() {
             <DialogTitle>Создать новый бюджет</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleBudgetSubmit}>
-             <div className="space-y-4 py-4">
-               <div>
-                 <Label htmlFor="monthYear">Выберите месяц и год</Label>
-                 <Input 
-                    type="month" 
-                    id="monthYear" 
-                    name="monthYear" 
-                    className="date-input"
-                    required
-                    defaultValue={new Date().toISOString().slice(0, 7)}
-                 />
-               </div>
-               <Button type="submit" className="w-full">Создать</Button>
-             </div>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label htmlFor="monthYear">Выберите месяц и год</Label>
+                <Input
+                  type="month"
+                  id="monthYear"
+                  name="monthYear"
+                  className="date-input"
+                  required
+                  defaultValue={new Date().toISOString().slice(0, 7)}
+                />
+              </div>
+              <Button type="submit" className="w-full">Создать</Button>
+            </div>
           </form>
         </DialogContent>
       </Dialog>

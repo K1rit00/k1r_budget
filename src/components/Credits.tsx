@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
 import { Separator } from "./ui/separator";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, AreaChart, Area } from "recharts";
 import { useAppActions } from "../contexts/AppContext";
 import { apiService } from "../services/api";
 import { Checkbox } from "./ui/checkbox";
@@ -250,6 +250,90 @@ function Credits() {
       .filter(([key]) => key >= currentMonthKey) // <-- ДОБАВЛЕН ФИЛЬТР
       .map(([_, value]) => value)
       .slice(0, 12); // Показываем 12 ближайших месяцев, начиная с текущего
+  };
+
+  // 1. Missing function for Payment History Chart
+  const getPaymentHistoryData = () => {
+    const history: Record<string, { month: string; principalAmount: number; interestAmount: number; sortKey: string }> = {};
+
+    payments.forEach(payment => {
+      const date = new Date(payment.paymentDate);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthName = date.toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
+
+      if (!history[key]) {
+        history[key] = {
+          month: monthName,
+          principalAmount: 0,
+          interestAmount: 0,
+          sortKey: key
+        };
+      }
+
+      history[key].principalAmount += payment.principalAmount || payment.amount; // Fallback if principal not split
+      history[key].interestAmount += payment.interestAmount || 0;
+    });
+
+    return Object.values(history)
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+      .slice(-12); // Last 12 months with activity
+  };
+
+  // 2. Missing function for Credit Structure Chart
+  const getCreditStructureData = () => {
+    return credits
+      .filter(c => c.status === "active")
+      .map(credit => ({
+        name: credit.name,
+        principal: credit.amount,
+        interest: calculateTotalInterest(credit)
+      }));
+  };
+
+  // 3. Missing function for Burndown Chart
+  const getBurndownData = () => {
+    const activeCredits = credits.filter(c => c.status === "active");
+    if (activeCredits.length === 0) return [];
+
+    const totalStartDebt = activeCredits.reduce((sum, c) => sum + (c.amount + calculateTotalInterest(c)), 0);
+    const today = new Date();
+    const data = [];
+
+    // Generate data for past 6 months and future 12 months
+    for (let i = -6; i <= 12; i++) {
+      const date = new Date(today.getFullYear(), today.getMonth() + i, 1);
+      const key = date.toISOString().slice(0, 7); // YYYY-MM
+      const monthName = date.toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
+
+      let actual = null;
+      let forecast = null;
+
+      // Logic for "Actual" (Past)
+      if (i <= 0) {
+        // Calculate historical debt based on payments made up to that date
+        // This is a simplified estimation for visualization
+        const paymentsUntilDate = payments.filter(p => new Date(p.paymentDate) <= new Date(today.getFullYear(), today.getMonth() + i + 1, 0));
+        const totalPaid = paymentsUntilDate.reduce((sum, p) => sum + p.amount, 0);
+        actual = Math.max(0, totalStartDebt - totalPaid);
+      }
+
+      // Logic for "Forecast" (Future)
+      if (i >= 0) {
+        // Start from current actual debt and subtract projected monthly payments
+        const currentTotalBalance = activeCredits.reduce((sum, c) => sum + c.currentBalance, 0); // Approximate
+        const monthlyTotal = getMonthlyPayments();
+        forecast = Math.max(0, currentTotalBalance - (monthlyTotal * i));
+      }
+
+      if (actual !== null || forecast !== null) {
+        data.push({
+          month: monthName,
+          actual,
+          forecast: forecast === null ? actual : forecast // Connect lines
+        });
+      }
+    }
+    return data;
   };
 
   const handleCreditSubmit = async (formData: FormData) => {
@@ -1161,9 +1245,33 @@ function Credits() {
 
         <TabsContent value="analytics">
           <div className="space-y-6">
+            <div className="mt-4 p-4 bg-muted/50 rounded-lg">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <p className="text-muted-foreground mb-1">Общая сумма кредитов</p>
+                  <p className="text-xl font-bold text-green-600 dark:text-green-400">
+                    {credits.reduce((sum, c) => sum + c.amount, 0).toLocaleString("kk-KZ")} ₸
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground mb-1">Общая переплата</p>
+                  <p className="text-xl font-bold text-red-600 dark:text-red-400">
+                    {credits.reduce((sum, c) => sum + calculateTotalInterest(c), 0).toLocaleString("kk-KZ")} ₸
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground mb-1">Итого к выплате</p>
+                  <p className="text-xl font-bold">
+                    {credits.reduce((sum, c) => sum + c.amount + calculateTotalInterest(c), 0).toLocaleString("kk-KZ")} ₸
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* График платежей (существующий) */}
             <Card className="rounded-2xl">
               <CardHeader>
-                <CardTitle>График платежей</CardTitle>
+                <CardTitle>График предстоящих платежей</CardTitle>
               </CardHeader>
               <CardContent>
                 {getPaymentScheduleData().length > 0 ? (
@@ -1172,7 +1280,16 @@ function Credits() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" />
                       <YAxis tickFormatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
-                      <Tooltip formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
+                      <Tooltip
+                        formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
+                        contentStyle={{
+                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
+                          borderRadius: '12px',       // Закругление углов
+                          border: '1px solid #374151', // Цвет рамки
+                          color: '#fff'               // Цвет текста (если нужно)
+                        }}
+                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                      />
                       <Bar dataKey="payments" fill="#ef4444" name="Платежи" />
                     </BarChart>
                   </ResponsiveContainer>
@@ -1185,6 +1302,147 @@ function Credits() {
                 )}
               </CardContent>
             </Card>
+
+            {/* История платежей: Тело vs Проценты */}
+            {getPaymentHistoryData().length > 0 && (
+              <Card className="rounded-2xl">
+                <CardHeader>
+                  <CardTitle>История платежей: Основной долг vs Проценты</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Визуализация структуры ваших платежей по месяцам
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <AreaChart data={getPaymentHistoryData()}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" />
+                      <YAxis tickFormatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
+                      <Tooltip
+                        formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
+                        contentStyle={{
+                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
+                          borderRadius: '12px',       // Закругление углов
+                          border: '1px solid #374151', // Цвет рамки
+                          color: '#fff'               // Цвет текста (если нужно)
+                        }}
+                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="interestAmount"
+                        stackId="1"
+                        stroke="#ef4444"
+                        fill="#ef4444"
+                        name="Проценты"
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="principalAmount"
+                        stackId="1"
+                        stroke="#22c55e"
+                        fill="#22c55e"
+                        name="Основной долг"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* График выгорания долга */}
+            {getBurndownData().length > 0 && (
+              <Card className="rounded-2xl">
+                <CardHeader>
+                  <CardTitle>График погашения долга</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Фактическое погашение и прогноз до полного закрытия
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <AreaChart data={getBurndownData()}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" />
+                      <YAxis tickFormatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
+                      <Tooltip
+                        formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
+                        contentStyle={{
+                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
+                          borderRadius: '12px',       // Закругление углов
+                          border: '1px solid #374151', // Цвет рамки
+                          color: '#fff'               // Цвет текста (если нужно)
+                        }}
+                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="actual"
+                        stroke="#3b82f6"
+                        fill="#3b82f6"
+                        name="Фактический долг"
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="forecast"
+                        stroke="#a855f7"
+                        fill="#a855f7"
+                        fillOpacity={0.3}
+                        strokeDasharray="5 5"
+                        name="Прогноз"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Структура долга: Основной долг vs Проценты */}
+            {credits.length > 0 && (
+              <Card className="rounded-2xl">
+                <CardHeader>
+                  <CardTitle>Структура стоимости кредитов</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Сравнение суммы кредита и переплаты по процентам
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={Math.max(300, credits.length * 60)}>
+                    <BarChart data={getCreditStructureData()} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis type="number" tickFormatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
+                      <YAxis type="category" dataKey="name" width={150} />
+                      <Tooltip
+                        formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
+                        contentStyle={{
+                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
+                          borderRadius: '12px',       // Закругление углов
+                          border: '1px solid #374151', // Цвет рамки
+                          color: '#fff'               // Цвет текста (если нужно)
+                        }}
+                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                      />
+                      <Bar dataKey="principal" stackId="a" fill="#22c55e" name="Сумма кредита" />
+                      <Bar dataKey="interest" stackId="a" fill="#ef4444" name="Переплата" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {credits.length === 0 && (
+              <Card className="rounded-2xl">
+                <CardContent className="py-12">
+                  <div className="text-center">
+                    <TrendingDown className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="mb-2">Нет данных для аналитики</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Добавьте кредиты и платежи для просмотра детальной аналитики
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </TabsContent>
       </Tabs>
@@ -1229,7 +1487,7 @@ function Credits() {
               <Select
                 name="sourceId"
                 value={selectedIncomeId}
-                onValueChange={(value) => {
+                onValueChange={(value: string) => {
                   setSelectedIncomeId(value);
                   if (value === "cash") {
                     setSelectedSourceType("cash");
@@ -1366,7 +1624,7 @@ function Credits() {
               <Select
                 name="sourceId"
                 value={selectedIncomeId}
-                onValueChange={(value) => {
+                onValueChange={(value: string) => {
                   setSelectedIncomeId(value);
                   if (value === "cash") {
                     setSelectedSourceType("cash");

@@ -175,7 +175,7 @@ const Dashboard = memo(function Dashboard() {
   // 6. Метрики здоровья
   const monthlySavings = monthlyIncome - monthlyExpenses;
   const savingsRate = monthlyIncome > 0 ? (monthlySavings / monthlyIncome) * 100 : 0;
-  
+
   // Коэффициент обязательных платежей (Debt + Rent Ratio)
   const fixedCostRatio = monthlyIncome > 0 ? (monthlyExpenses / monthlyIncome) * 100 : 0;
 
@@ -313,11 +313,12 @@ const Dashboard = memo(function Dashboard() {
                   <Tooltip
                     formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
                     contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                      color: 'hsl(var(--card-foreground))'
+                      backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
+                      borderRadius: '12px',       // Закругление углов
+                      border: '1px solid #374151', // Цвет рамки
+                      color: '#fff'               // Цвет текста (если нужно)
                     }}
+                    itemStyle={{ color: '#fff' }} // Цвет текста самих значений
                   />
                 </RechartsPieChart>
               </ResponsiveContainer>
@@ -425,7 +426,7 @@ const Dashboard = memo(function Dashboard() {
       .filter(r => r.status === 'active')
       .map(property => {
         const startDate = new Date(property.startDate);
-        const paymentDay = startDate.getDate(); 
+        const paymentDay = startDate.getDate();
 
         let nextPaymentDate = new Date(now.getFullYear(), now.getMonth(), paymentDay);
         if (nextPaymentDate < now) {

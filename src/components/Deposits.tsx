@@ -722,13 +722,13 @@ function Deposits() {
                         {availableIncomes.map(income => {
                           // Получаем название категории из загруженных данных
                           let categoryName = "Другое";
-                          
+
                           if (typeof income.type === 'object' && income.type !== null) {
                             // Если type уже populate (объект с полями)
                             categoryName = income.type.name;
                           } else if (typeof income.type === 'string') {
                             // Если type это ID, ищем категорию в списке
-                            const category = incomeCategories.find(c => 
+                            const category = incomeCategories.find(c =>
                               (c._id === income.type) || (c.id === income.type)
                             );
                             categoryName = category?.name || "Другое";
@@ -890,7 +890,16 @@ function Deposits() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" />
                       <YAxis tickFormatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
-                      <Tooltip formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
+                      <Tooltip
+                        formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
+                        contentStyle={{
+                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
+                          borderRadius: '12px',       // Закругление углов
+                          border: '1px solid #374151', // Цвет рамки
+                          color: '#fff'               // Цвет текста (если нужно)
+                        }}
+                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                      />
                       <Line type="monotone" dataKey="balance" stroke="#10b981" strokeWidth={2} name="Баланс" />
                       <Legend />
                     </LineChart>
@@ -927,7 +936,16 @@ function Deposits() {
                             <Cell key={`cell-${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
+                        <Tooltip
+                          formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
+                          contentStyle={{
+                            backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
+                            borderRadius: '12px',       // Закругление углов
+                            border: '1px solid #374151', // Цвет рамки
+                            color: '#fff'               // Цвет текста (если нужно)
+                          }}
+                          itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                        />
                         <Legend />
                       </PieChart>
                     </ResponsiveContainer>

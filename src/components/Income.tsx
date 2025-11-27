@@ -1087,7 +1087,16 @@ function Income() {
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
+                      <Tooltip
+                        formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
+                        contentStyle={{
+                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
+                          borderRadius: '12px',       // Закругление углов
+                          border: '1px solid #374151', // Цвет рамки
+                          color: '#fff'               // Цвет текста (если нужно)
+                        }}
+                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                      />
                       <Legend />
                     </PieChart>
                   </ResponsiveContainer>
@@ -1114,7 +1123,16 @@ function Income() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" />
                       <YAxis tickFormatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
-                      <Tooltip formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`} />
+                      <Tooltip
+                        formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
+                        contentStyle={{
+                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
+                          borderRadius: '12px',       // Закругление углов
+                          border: '1px solid #374151', // Цвет рамки
+                          color: '#fff'               // Цвет текста (если нужно)
+                        }}
+                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                      />
                       <Bar dataKey="amount" fill="#10b981" />
                     </BarChart>
                   </ResponsiveContainer>
