@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import {
   TrendingUp, Plus, DollarSign, Briefcase, Edit, Trash2, Calendar,
   BarChart3, Loader2, RefreshCw, AlertCircle, Power, PowerOff,
-  History, Play, ArrowRight, Wallet, PiggyBank
+  History, Play, ArrowRight, Wallet, PiggyBank, Coins
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -398,6 +398,29 @@ function Income() {
       .reduce((sum, income) => sum + income.amount, 0);
   };
 
+  // --- НОВЫЙ МЕТОД ДЛЯ РАСЧЕТА ОСТАТКА ---
+  const getCurrentMonthRemaining = () => {
+    const now = new Date();
+    
+    // 1. Получаем все доходы за текущий месяц
+    const currentMonthIncomes = incomes.filter(income => {
+      const d = new Date(income.date);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    });
+
+    const totalIncome = currentMonthIncomes.reduce((sum, income) => sum + income.amount, 0);
+
+    // 2. Создаем Set из ID доходов текущего месяца для быстрого поиска
+    const incomeIds = new Set(currentMonthIncomes.map(i => i.id));
+
+    // 3. Считаем сумму использованных средств, относящихся к этим доходам
+    const usedAmount = usageHistory
+      .filter(usage => usage.incomeId && incomeIds.has(usage.incomeId._id))
+      .reduce((sum, usage) => sum + usage.usedAmount, 0);
+
+    return Math.max(0, totalIncome - usedAmount);
+  };
+
   const getTotalYearIncome = () => {
     const year = new Date().getFullYear();
     return incomes
@@ -442,8 +465,10 @@ function Income() {
 
   return (
     <div className="space-y-6">
-      {/* Статистика доходов */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Статистика доходов - Изменено на 4 колонки */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        
+        {/* Карточка 1: Текущий месяц */}
         <Card className="rounded-2xl bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950/20 dark:to-green-900/20 border-green-200 dark:border-green-800">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -456,6 +481,23 @@ function Income() {
           </CardContent>
         </Card>
 
+        {/* Карточка 2: Остаток (Новый KPI) */}
+        <Card className="rounded-2xl bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-950/20 dark:to-orange-900/20 border-orange-200 dark:border-orange-800">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Coins className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+              <span className="text-orange-700 dark:text-orange-300">Остаток на счете</span>
+            </div>
+            <p className="text-2xl text-orange-900 dark:text-orange-100">
+              {getCurrentMonthRemaining().toLocaleString("kk-KZ")} ₸
+            </p>
+            <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+              Нераспределенные средства
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Карточка 3: За год */}
         <Card className="rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/20 dark:to-blue-900/20 border-blue-200 dark:border-blue-800">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -468,6 +510,7 @@ function Income() {
           </CardContent>
         </Card>
 
+        {/* Карточка 4: Регулярные */}
         <Card className="rounded-2xl bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950/20 dark:to-purple-900/20 border-purple-200 dark:border-purple-800">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -486,6 +529,7 @@ function Income() {
 
       {/* Основной контент */}
       <Tabs defaultValue="incomes" className="w-full">
+        {/* ... Остальной код без изменений ... */}
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="incomes">Доходы</TabsTrigger>
           <TabsTrigger value="transactions">История операций</TabsTrigger>

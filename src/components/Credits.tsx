@@ -45,8 +45,8 @@ interface Credit {
   monthlyPayment: number;
   monthlyPaymentDate: number;
   startDate: string;
-  endDate: string; // Оставляем для расчетов
-  termInMonths: number; // <<< ИЗМЕНЕНИЕ: Добавлено
+  endDate: string;
+  termInMonths: number;
   type: "credit" | "loan" | "installment";
   status: "active" | "paid" | "overdue" | "cancelled";
   description?: string;
@@ -131,7 +131,7 @@ function Credits() {
         apiService.getCredits(),
         apiService.getBanks(),
         apiService.getAllPayments(),
-        apiService.getCategories('income'), // Добавлено
+        apiService.getCategories('income'),
         loadAvailableIncomes(),
         loadAvailableDeposits()
       ]);
@@ -202,16 +202,83 @@ function Credits() {
     }
   };
 
+  // --- ЛОГИКА: ПРОВЕРКА ОПЛАТЫ В ТЕКУЩЕМ МЕСЯЦЕ ---
+  const isCreditPaidThisMonth = (creditId: string) => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    return payments.some(p => {
+      const pDate = new Date(p.paymentDate);
+      const pCreditId = typeof p.credit === 'string' ? p.credit : p.credit._id;
+      
+      return pCreditId === creditId && 
+             pDate.getMonth() === currentMonth && 
+             pDate.getFullYear() === currentYear;
+    });
+  };
+
+  // --- ЛОГИКА: РАСЧЕТ ДАТЫ СЛЕДУЮЩЕГО ПЛАТЕЖА (Объект Date) ---
+  const getNextPaymentDateObject = (credit: Credit) => {
+    const today = new Date();
+    const startDate = new Date(credit.startDate);
+    const paymentDay = credit.monthlyPaymentDate;
+
+    // 1. Создаем дату платежа в текущем месяце
+    let nextPaymentDate = new Date(today.getFullYear(), today.getMonth(), paymentDay);
+
+    // 2. Если сегодня уже больше дня платежа -> переносим на след месяц
+    if (today.getDate() > paymentDay) {
+        nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+    }
+
+    // 3. Если рассчитанная дата оказалась РАНЬШЕ даты старта кредита -> переносим на след месяц
+    if (nextPaymentDate < startDate) {
+        nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+    }
+    
+    return nextPaymentDate;
+  };
+
+  // --- ЛОГИКА: МОЖНО ЛИ ОПЛАТИТЬ СЕЙЧАС (ДЛЯ МАССОВОЙ ОПЛАТЫ) ---
+  const isCreditPayableNow = (credit: Credit) => {
+    if (credit.status !== 'active') return false;
+    
+    // Если уже оплачен в этом месяце - не платим
+    if (isCreditPaidThisMonth(credit._id)) return false;
+
+    const today = new Date();
+    const nextDate = getNextPaymentDateObject(credit);
+
+    // Платим только если Следующий платеж выпадает на ТЕКУЩИЙ месяц и год
+    return nextDate.getMonth() === today.getMonth() && 
+           nextDate.getFullYear() === today.getFullYear();
+  };
+
+
   const getTotalDebt = () => {
     return credits
       .filter(credit => credit.status === "active")
       .reduce((sum, credit) => sum + credit.currentBalance, 0);
   };
 
+  // Общая сумма обязательств (статистика - все активные)
   const getMonthlyPayments = () => {
     return credits
       .filter(credit => credit.status === "active")
       .reduce((sum, credit) => sum + credit.monthlyPayment, 0);
+  };
+
+  // --- СУММА ТОЛЬКО ТЕХ, КОТОРЫЕ НУЖНО ОПЛАТИТЬ В ЭТОМ МЕСЯЦЕ ---
+  const getPendingMonthlyPaymentsSum = () => {
+    return credits
+      .filter(credit => isCreditPayableNow(credit))
+      .reduce((sum, credit) => sum + credit.monthlyPayment, 0);
+  };
+
+  // --- КОЛИЧЕСТВО КРЕДИТОВ К ОПЛАТЕ В ЭТОМ МЕСЯЦЕ ---
+  const getPendingCreditsCount = () => {
+    return credits.filter(credit => isCreditPayableNow(credit)).length;
   };
 
   const getActiveCreditsCount = () => {
@@ -242,17 +309,16 @@ function Credits() {
     });
 
     const today = new Date();
-    today.setDate(1); // Устанавливаем 1-е число, чтобы получить ключ именно этого месяца
+    today.setDate(1); 
     const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 
     return Object.entries(scheduleData)
       .sort(([a], [b]) => a.localeCompare(b))
-      .filter(([key]) => key >= currentMonthKey) // <-- ДОБАВЛЕН ФИЛЬТР
+      .filter(([key]) => key >= currentMonthKey) 
       .map(([_, value]) => value)
-      .slice(0, 12); // Показываем 12 ближайших месяцев, начиная с текущего
+      .slice(0, 12); 
   };
 
-  // 1. Missing function for Payment History Chart
   const getPaymentHistoryData = () => {
     const history: Record<string, { month: string; principalAmount: number; interestAmount: number; sortKey: string }> = {};
 
@@ -270,16 +336,15 @@ function Credits() {
         };
       }
 
-      history[key].principalAmount += payment.principalAmount || payment.amount; // Fallback if principal not split
+      history[key].principalAmount += payment.principalAmount || payment.amount;
       history[key].interestAmount += payment.interestAmount || 0;
     });
 
     return Object.values(history)
       .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
-      .slice(-12); // Last 12 months with activity
+      .slice(-12);
   };
 
-  // 2. Missing function for Credit Structure Chart
   const getCreditStructureData = () => {
     return credits
       .filter(c => c.status === "active")
@@ -290,7 +355,6 @@ function Credits() {
       }));
   };
 
-  // 3. Missing function for Burndown Chart
   const getBurndownData = () => {
     const activeCredits = credits.filter(c => c.status === "active");
     if (activeCredits.length === 0) return [];
@@ -299,28 +363,21 @@ function Credits() {
     const today = new Date();
     const data = [];
 
-    // Generate data for past 6 months and future 12 months
     for (let i = -6; i <= 12; i++) {
       const date = new Date(today.getFullYear(), today.getMonth() + i, 1);
-      const key = date.toISOString().slice(0, 7); // YYYY-MM
       const monthName = date.toLocaleDateString("ru-RU", { month: "short", year: "numeric" });
 
       let actual = null;
       let forecast = null;
 
-      // Logic for "Actual" (Past)
       if (i <= 0) {
-        // Calculate historical debt based on payments made up to that date
-        // This is a simplified estimation for visualization
         const paymentsUntilDate = payments.filter(p => new Date(p.paymentDate) <= new Date(today.getFullYear(), today.getMonth() + i + 1, 0));
         const totalPaid = paymentsUntilDate.reduce((sum, p) => sum + p.amount, 0);
         actual = Math.max(0, totalStartDebt - totalPaid);
       }
 
-      // Logic for "Forecast" (Future)
       if (i >= 0) {
-        // Start from current actual debt and subtract projected monthly payments
-        const currentTotalBalance = activeCredits.reduce((sum, c) => sum + c.currentBalance, 0); // Approximate
+        const currentTotalBalance = activeCredits.reduce((sum, c) => sum + c.currentBalance, 0); 
         const monthlyTotal = getMonthlyPayments();
         forecast = Math.max(0, currentTotalBalance - (monthlyTotal * i));
       }
@@ -329,7 +386,7 @@ function Credits() {
         data.push({
           month: monthName,
           actual,
-          forecast: forecast === null ? actual : forecast // Connect lines
+          forecast: forecast === null ? actual : forecast 
         });
       }
     }
@@ -347,14 +404,14 @@ function Credits() {
       const monthlyPayment = formData.get("monthlyPayment") as string;
       const monthlyPaymentDate = formData.get("monthlyPaymentDate") as string;
       const startDate = formData.get("startDate") as string;
-      const termInMonths = formData.get("termInMonths") as string; // <<< ИЗМЕНЕНИЕ
+      const termInMonths = formData.get("termInMonths") as string; 
       const type = formData.get("type") as "credit" | "loan" | "installment";
       const description = formData.get("description") as string;
       const isOldCredit = formData.get("isOldCredit") === "true";
       const initialDebt = formData.get("initialDebt") as string;
 
       if (!name || !bankId || !amount || !interestRate || !monthlyPayment ||
-        !monthlyPaymentDate || !startDate || !termInMonths || !type) { // <<< ИЗМЕНЕНИЕ
+        !monthlyPaymentDate || !startDate || !termInMonths || !type) {
         addNotification({
           message: 'Пожалуйста, заполните все обязательные поля',
           type: 'error'
@@ -366,11 +423,8 @@ function Credits() {
       const interestRateNum = parseFloat(interestRate);
       const monthlyPaymentNum = parseFloat(monthlyPayment);
       const monthlyPaymentDateNum = parseInt(monthlyPaymentDate);
-      const termInMonthsNum = parseInt(termInMonths); // <<< ИЗМЕНЕНИЕ
+      const termInMonthsNum = parseInt(termInMonths); 
 
-      // ... (проверки amountNum, interestRateNum, monthlyPaymentNum, monthlyPaymentDateNum)
-
-      // <<< ИЗМЕНЕНИЕ: Новая проверка для termInMonthsNum
       if (isNaN(termInMonthsNum) || termInMonthsNum <= 0) {
         addNotification({ message: 'Срок в месяцах должен быть положительным числом', type: 'error' });
         return;
@@ -393,7 +447,7 @@ function Credits() {
         monthlyPayment: monthlyPaymentNum,
         monthlyPaymentDate: monthlyPaymentDateNum,
         startDate: startDate,
-        termInMonths: termInMonthsNum, // <<< ИЗМЕНЕНИЕ
+        termInMonths: termInMonthsNum, 
         type: type,
         description: description?.trim() || undefined,
         accountNumber: undefined,
@@ -430,6 +484,7 @@ function Credits() {
       setActionLoading(false);
     }
   };
+  
   const handlePaymentSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -439,7 +494,6 @@ function Credits() {
       const sourceId = formData.get("sourceId") as string;
       const notes = formData.get("notes") as string;
 
-      // Извлекаем реальный ID депозита, убирая префикс "deposit-"
       let actualSourceId = sourceId;
       if (selectedSourceType === "deposit" && sourceId.startsWith("deposit-")) {
         actualSourceId = sourceId.replace("deposit-", "");
@@ -452,13 +506,11 @@ function Credits() {
         notes: notes || undefined
       };
 
-      // Добавляем incomeId или depositId в зависимости от типа источника
       if (selectedSourceType === "income" && actualSourceId && actualSourceId !== "cash") {
         paymentData.incomeId = actualSourceId;
       } else if (selectedSourceType === "deposit" && actualSourceId) {
         paymentData.depositId = actualSourceId;
 
-        // Создаем транзакцию снятия с депозита
         const transactionDescription = `Оплата кредита: ${paymentAmount.toLocaleString("ru-RU")} ₸`;
 
         try {
@@ -500,15 +552,15 @@ function Credits() {
   };
 
   const payMonthlyPayments = async () => {
-    const activeCredits = credits.filter(credit => credit.status === "active");
+    // --- ИЗМЕНЕНИЕ: Учитываем только те кредиты, у которых Next Payment в ТЕКУЩЕМ месяце ---
+    const activeCredits = credits.filter(credit => isCreditPayableNow(credit));
 
     if (activeCredits.length === 0) {
-      addNotification({ message: "Нет активных кредитов для погашения", type: "info" });
+      addNotification({ message: "Нет платежей, ожидающих оплаты в текущем месяце", type: "info" });
       return;
     }
 
-    // Открываем диалог выбора источника для массового платежа
-    setPaymentAmount(getMonthlyPayments());
+    setPaymentAmount(getPendingMonthlyPaymentsSum());
     setSelectedIncomeId("cash");
     setSelectedSourceType("cash");
     setIsBulkPaymentDialogOpen(true);
@@ -517,10 +569,11 @@ function Credits() {
   const handleBulkPaymentSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    const activeCredits = credits.filter(credit => credit.status === "active");
+    // --- ИЗМЕНЕНИЕ: Оплачиваем только те, что Payable Now ---
+    const activeCreditsToPay = credits.filter(credit => isCreditPayableNow(credit));
 
-    if (activeCredits.length === 0) {
-      addNotification({ message: "Нет активных кредитов для погашения", type: "info" });
+    if (activeCreditsToPay.length === 0) {
+      addNotification({ message: "Нет платежей, ожидающих оплаты в текущем месяце", type: "info" });
       return;
     }
 
@@ -529,16 +582,14 @@ function Credits() {
       const formData = new FormData(e.currentTarget);
       const sourceId = formData.get("sourceId") as string;
 
-      // Извлекаем реальный ID депозита
       let actualSourceId = sourceId;
       if (selectedSourceType === "deposit" && sourceId.startsWith("deposit-")) {
         actualSourceId = sourceId.replace("deposit-", "");
       }
 
-      // Если выбран депозит, сначала создаем транзакцию снятия
       if (selectedSourceType === "deposit" && actualSourceId) {
-        const totalAmount = getMonthlyPayments();
-        const transactionDescription = `Погашение ежемесячных платежей по ${activeCredits.length} кредитам`;
+        const totalAmount = getPendingMonthlyPaymentsSum();
+        const transactionDescription = `Погашение ежемесячных платежей по ${activeCreditsToPay.length} кредитам`;
 
         try {
           await apiService.createDepositTransaction({
@@ -554,9 +605,8 @@ function Credits() {
         }
       }
 
-      // Теперь добавляем платежи по каждому кредиту
-      const payments = [];
-      for (const credit of activeCredits) {
+      const paymentsResult = [];
+      for (const credit of activeCreditsToPay) {
         const paymentData: any = {
           amount: credit.monthlyPayment,
           principalAmount: credit.monthlyPayment,
@@ -564,7 +614,6 @@ function Credits() {
           notes: "Автоматический ежемесячный платеж"
         };
 
-        // Добавляем источник только если не наличка
         if (selectedSourceType === "income" && actualSourceId && actualSourceId !== "cash") {
           paymentData.incomeId = actualSourceId;
         } else if (selectedSourceType === "deposit" && actualSourceId) {
@@ -573,14 +622,14 @@ function Credits() {
 
         const response = await apiService.addPayment(credit._id, paymentData);
         if (response.success) {
-          payments.push(response.data);
+          paymentsResult.push(response.data);
         }
       }
 
-      const totalAmount = payments.reduce((sum, p) => sum + (p.payment?.amount || 0), 0);
+      const totalAmount = paymentsResult.reduce((sum, p) => sum + (p.payment?.amount || 0), 0);
 
       addNotification({
-        message: `Погашено ${payments.length} платежей на общую сумму ${totalAmount.toFixed(2)} ₸`,
+        message: `Погашено ${paymentsResult.length} платежей на общую сумму ${totalAmount.toFixed(2)} ₸`,
         type: "success"
       });
 
@@ -676,37 +725,20 @@ function Credits() {
     }
   };
 
+  // --- ИЗМЕНЕНИЕ: Отображение дней до платежа (используем тот же объект Date) ---
   const getDaysUntilNextPayment = (credit: Credit) => {
     const today = new Date();
-    const currentDay = today.getDate();
-    const paymentDay = credit.monthlyPaymentDate;
-
-    let nextPaymentDate: Date;
-
-    if (currentDay < paymentDay) {
-      nextPaymentDate = new Date(today.getFullYear(), today.getMonth(), paymentDay);
-    } else {
-      nextPaymentDate = new Date(today.getFullYear(), today.getMonth() + 1, paymentDay);
-    }
+    const nextPaymentDate = getNextPaymentDateObject(credit);
 
     const diffTime = nextPaymentDate.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays;
   };
 
+  // --- ИЗМЕНЕНИЕ: Отображение даты (используем тот же объект Date) ---
   const getNextPaymentDate = (credit: Credit) => {
-    const today = new Date();
-    const currentDay = today.getDate();
-    const paymentDay = credit.monthlyPaymentDate;
-
-    let nextPaymentDate: Date;
-
-    if (currentDay < paymentDay) {
-      nextPaymentDate = new Date(today.getFullYear(), today.getMonth(), paymentDay);
-    } else {
-      nextPaymentDate = new Date(today.getFullYear(), today.getMonth() + 1, paymentDay);
-    }
-
+    const nextPaymentDate = getNextPaymentDateObject(credit);
+    
     return nextPaymentDate.toLocaleDateString("ru-RU", {
       day: "numeric",
       month: "long"
@@ -742,7 +774,7 @@ function Credits() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <DollarSign className="w-5 h-5 text-orange-600 dark:text-orange-400" />
-              <span className="text-sm text-orange-700 dark:text-orange-300">Ежемесячно</span>
+              <span className="text-sm text-orange-700 dark:text-orange-300">Ежемесячно (всего)</span>
             </div>
             <p className="text-2xl text-orange-900 dark:text-orange-100">
               {getMonthlyPayments().toLocaleString("kk-KZ")} ₸
@@ -764,17 +796,18 @@ function Credits() {
       </div>
 
       {/* Кнопка погашения ежемесячных платежей */}
-      {getActiveCreditsCount() > 0 && (
+      {/* ИЗМЕНЕНИЕ: Карточка показывает только кредиты к оплате В ЭТОМ МЕСЯЦЕ */}
+      {getPendingCreditsCount() > 0 ? (
         <Card className="rounded-2xl bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border-green-200 dark:border-green-800">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="flex items-center gap-2 mb-1">
                   <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-                  Погасить ежемесячные платежи
+                  Погасить текущие платежи
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  Автоматически добавить платежи для всех активных кредитов ({getActiveCreditsCount()} шт.) на общую сумму {getMonthlyPayments().toLocaleString("kk-KZ")} ₸
+                  Осталось к оплате в этом месяце: {getPendingCreditsCount()} кредита(-ов) на сумму {getPendingMonthlyPaymentsSum().toLocaleString("kk-KZ")} ₸
                 </p>
               </div>
               <Button
@@ -787,8 +820,24 @@ function Credits() {
                 ) : (
                   <CheckCircle className="w-4 h-4 mr-2" />
                 )}
-                Погасить все
+                Оплатить {getPendingMonthlyPaymentsSum().toLocaleString("kk-KZ")} ₸
               </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : getActiveCreditsCount() > 0 && (
+         <Card className="rounded-2xl bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-950/20 dark:to-slate-950/20 border-gray-200 dark:border-gray-800 opacity-75">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="flex items-center gap-2 mb-1 text-gray-600">
+                  <CheckCircle className="w-5 h-5" />
+                  Все платежи оплачены
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  В этом месяце задолженностей нет. Следующие платежи ожидаются в следующем месяце.
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -810,13 +859,13 @@ function Credits() {
                 setIsCreditDialogOpen(isOpen);
                 if (!isOpen) {
                   setEditingCredit(null);
-                  setIsOldCredit(false); // <-- ДОБАВИТЬ ЭТО
+                  setIsOldCredit(false);
                 }
               }}>
                 <DialogTrigger asChild>
                   <Button onClick={() => {
                     setEditingCredit(null);
-                    setIsOldCredit(false); // <-- ДОБАВЬТЕ ЭТУ СТРОКУ
+                    setIsOldCredit(false);
                   }}>
                     <Plus className="w-4 h-4 mr-2" />
                     Добавить кредит
@@ -894,7 +943,6 @@ function Credits() {
                       />
                     </div>
 
-                    {/* НОВЫЕ ПОЛЯ: СТАРЫЙ КРЕДИТ И ТЕКУЩАЯ ЗАДОЛЖЕННОСТЬ */}
                     <div className="space-y-3 p-3 border rounded-lg bg-muted/30">
                       <div className="flex items-center space-x-2">
                         <input
@@ -906,12 +954,10 @@ function Credits() {
                           onChange={(e) => {
                             setIsOldCredit(e.target.checked);
                             if (!e.target.checked) {
-                              // Сбрасываем initialDebt если чекбокс снят
                               const input = document.getElementById('initialDebt') as HTMLInputElement;
                               if (input) input.value = '';
                             }
                           }}
-                        // defaultChecked={editingCredit?.isOldCredit} // <-- УДАЛИТЕ ЭТУ СТРОКУ
                         />
                         <Label htmlFor="isOldCredit" className="cursor-pointer font-normal text-sm">
                           Старый кредит (уже частично погашен)
@@ -1055,6 +1101,8 @@ function Credits() {
                   credits.map(credit => {
                     const progress = getPaymentProgress(credit);
                     const daysUntilPayment = getDaysUntilNextPayment(credit);
+                    // Проверяем, оплачен ли этот конкретный кредит
+                    const isPaid = isCreditPaidThisMonth(credit._id);
 
                     return (
                       <div key={credit._id} className="p-6 border rounded-xl hover:shadow-md transition-shadow">
@@ -1065,6 +1113,13 @@ function Credits() {
                               <Badge variant={credit.status === "active" ? "default" : credit.status === "paid" ? "secondary" : "destructive"}>
                                 {credit.status === "active" ? "Активный" : credit.status === "paid" ? "Погашен" : "Просрочен"}
                               </Badge>
+                              {/* Бейджик, если уже оплачен в этом месяце */}
+                              {credit.status === "active" && isPaid && (
+                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Оплачен в этом месяце
+                                </Badge>
+                              )}
                               <Badge variant="outline">{credit.type === "credit" ? "Кредит" : credit.type === "loan" ? "Займ" : "Рассрочка"}</Badge>
                             </div>
                             <p className="text-sm text-muted-foreground">
@@ -1077,7 +1132,7 @@ function Credits() {
                               size="sm"
                               onClick={() => {
                                 setEditingCredit(credit);
-                                setIsOldCredit(credit.isOldCredit || false); // <-- ДОБАВЬТЕ ЭТУ СТРОКУ
+                                setIsOldCredit(credit.isOldCredit || false);
                                 setIsCreditDialogOpen(true);
                               }}
                               disabled={actionLoading}
@@ -1159,17 +1214,19 @@ function Credits() {
                             <div className="flex w-full sm:w-auto gap-2">
                               <Button
                                 size="sm"
-                                variant="default"
+                                variant={isPaid ? "outline" : "default"}
                                 onClick={() => openPaymentDialog(credit, true)}
-                                className="flex-1 sm:flex-none bg-green-500 hover:bg-green-600 text-white shadow-md px-2"
+                                className={`flex-1 sm:flex-none px-2 shadow-md ${!isPaid ? "bg-green-500 hover:bg-green-600 text-white" : ""}`}
                                 disabled={actionLoading}
                               >
                                 {actionLoading ? (
                                   <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                                ) : isPaid ? (
+                                  <CheckCircle className="w-4 h-4 mr-1 text-green-600" />
                                 ) : (
                                   <CheckCircle className="w-4 h-4 mr-1" />
                                 )}
-                                Ежемесячный
+                                {isPaid ? "Оплачено" : "Ежемесячный"}
                               </Button>
                               <Button
                                 size="sm"
@@ -1283,12 +1340,12 @@ function Credits() {
                       <Tooltip
                         formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
                         contentStyle={{
-                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
-                          borderRadius: '12px',       // Закругление углов
-                          border: '1px solid #374151', // Цвет рамки
-                          color: '#fff'               // Цвет текста (если нужно)
+                          backgroundColor: '#1f2937', 
+                          borderRadius: '12px',       
+                          border: '1px solid #374151', 
+                          color: '#fff'               
                         }}
-                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                        itemStyle={{ color: '#fff' }} 
                       />
                       <Bar dataKey="payments" fill="#ef4444" name="Платежи" />
                     </BarChart>
@@ -1321,12 +1378,12 @@ function Credits() {
                       <Tooltip
                         formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
                         contentStyle={{
-                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
-                          borderRadius: '12px',       // Закругление углов
-                          border: '1px solid #374151', // Цвет рамки
-                          color: '#fff'               // Цвет текста (если нужно)
+                          backgroundColor: '#1f2937', 
+                          borderRadius: '12px',       
+                          border: '1px solid #374151', 
+                          color: '#fff'               
                         }}
-                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                        itemStyle={{ color: '#fff' }} 
                       />
                       <Area
                         type="monotone"
@@ -1368,12 +1425,12 @@ function Credits() {
                       <Tooltip
                         formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
                         contentStyle={{
-                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
-                          borderRadius: '12px',       // Закругление углов
-                          border: '1px solid #374151', // Цвет рамки
-                          color: '#fff'               // Цвет текста (если нужно)
+                          backgroundColor: '#1f2937', 
+                          borderRadius: '12px',       
+                          border: '1px solid #374151', 
+                          color: '#fff'               
                         }}
-                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                        itemStyle={{ color: '#fff' }} 
                       />
                       <Area
                         type="monotone"
@@ -1415,12 +1472,12 @@ function Credits() {
                       <Tooltip
                         formatter={(value) => `${Number(value).toLocaleString("kk-KZ")} ₸`}
                         contentStyle={{
-                          backgroundColor: '#1f2937', // Цвет фона (здесь темно-серый)
-                          borderRadius: '12px',       // Закругление углов
-                          border: '1px solid #374151', // Цвет рамки
-                          color: '#fff'               // Цвет текста (если нужно)
+                          backgroundColor: '#1f2937', 
+                          borderRadius: '12px',       
+                          border: '1px solid #374151', 
+                          color: '#fff'               
                         }}
-                        itemStyle={{ color: '#fff' }} // Цвет текста самих значений
+                        itemStyle={{ color: '#fff' }} 
                       />
                       <Bar dataKey="principal" stackId="a" fill="#22c55e" name="Сумма кредита" />
                       <Bar dataKey="interest" stackId="a" fill="#ef4444" name="Переплата" />
@@ -1611,11 +1668,14 @@ function Credits() {
             <div className="p-4 bg-muted rounded-lg">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm text-muted-foreground">Количество кредитов:</span>
-                <span className="font-semibold">{getActiveCreditsCount()} шт.</span>
+                <span className="font-semibold">{getPendingCreditsCount()} шт.</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Общая сумма:</span>
-                <span className="text-lg font-bold">{getMonthlyPayments().toLocaleString("kk-KZ")} ₸</span>
+                <span className="text-lg font-bold">{getPendingMonthlyPaymentsSum().toLocaleString("kk-KZ")} ₸</span>
+              </div>
+              <div className="mt-2 pt-2 border-t border-dashed text-xs text-muted-foreground">
+                 Только неоплаченные в этом месяце кредиты.
               </div>
             </div>
 

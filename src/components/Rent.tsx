@@ -1434,15 +1434,15 @@ function Rent() {
         </TabsContent>
 
         <TabsContent value="payments">
-          <Card className="rounded-2xl">
-            <CardHeader>
+          <Card className="rounded-2xl border-none shadow-sm bg-transparent">
+            <CardHeader className="px-0 pt-0">
               <CardTitle>История платежей</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
+            <CardContent className="px-0">
+              <div className="space-y-4">
                 {payments.length === 0 ? (
-                  <div className="text-center py-12">
-                    <FileText className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                  <div className="text-center py-12 bg-white dark:bg-card rounded-xl border border-dashed">
+                    <FileText className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
                     <h3 className="text-lg font-semibold mb-2">Нет платежей</h3>
                     <p className="text-sm text-muted-foreground">
                       Добавьте объект аренды и начните регистрировать платежи
@@ -1456,87 +1456,128 @@ function Rent() {
                       const utilityTypeName = getUtilityTypeName(payment.utilityTypeId);
 
                       return (
-                        <div key={payment._id} className="flex flex-col sm:flex-row items-start justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow">
-                          <div className="flex-1 w-full">
-                            <div className="flex items-center gap-2 mb-2 flex-wrap">
-                              {/* Добавлен класс break-words для переноса длинных адресов */}
-                              <h4 className="font-semibold break-words mr-1">
-                                {property?.address || "Объект удален"}
-                              </h4>
-                              <Badge variant={
-                                payment.paymentType === "rent" ? "default" :
-                                  payment.paymentType === "utilities" ? "secondary" :
-                                    "outline"
-                              }>
-                                {payment.paymentType === "rent" ? "Аренда" :
-                                  payment.paymentType === "utilities" ? "Коммуналка" :
-                                    payment.paymentType === "deposit" ? "Залог" : "Другое"}
-                              </Badge>
-                              {utilityTypeName && (
-                                <Badge variant="outline">
-                                  {utilityTypeName}
-                                </Badge>
+                        <div
+                          key={payment._id}
+                          className="group flex flex-col bg-card border rounded-xl p-4 sm:p-5 hover:shadow-md hover:border-primary/30 transition-all duration-300"
+                        >
+                          <div className="flex flex-col md:flex-row gap-4 justify-between">
+
+                            {/* ЛЕВАЯ ЧАСТЬ: Информация */}
+                            <div className="flex-1 min-w-0 space-y-3">
+
+                              {/* Заголовок и Бейджи */}
+                              <div>
+                                <div className="flex items-start justify-between md:justify-start gap-3 mb-2">
+                                  <h4 className="font-bold text-base sm:text-lg leading-tight break-words text-foreground">
+                                    {property?.address || "Объект удален"}
+                                  </h4>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant={
+                                    payment.paymentType === "rent" ? "default" :
+                                      payment.paymentType === "utilities" ? "secondary" :
+                                        "outline"
+                                  } className="rounded-md px-2 py-0.5 text-xs font-medium">
+                                    {payment.paymentType === "rent" ? "Аренда" :
+                                      payment.paymentType === "utilities" ? "Коммуналка" :
+                                        payment.paymentType === "deposit" ? "Залог" : "Другое"}
+                                  </Badge>
+
+                                  {utilityTypeName && (
+                                    <Badge variant="outline" className="text-xs bg-muted/50">
+                                      {utilityTypeName}
+                                    </Badge>
+                                  )}
+
+                                  <Badge variant={
+                                    payment.status === "paid" ? "outline" :
+                                      payment.status === "pending" ? "secondary" :
+                                        payment.status === "overdue" ? "destructive" : "outline"
+                                  } className={`text-xs border-transparent ${payment.status === "paid" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : ""
+                                    }`}>
+                                    {payment.status === "paid" ? "Оплачено" :
+                                      payment.status === "pending" ? "Ожидает" :
+                                        payment.status === "overdue" ? "Просрочено" : "Отменено"}
+                                  </Badge>
+                                </div>
+                              </div>
+
+                              {/* Дата и Заметки */}
+                              <div className="text-sm text-muted-foreground space-y-1.5">
+                                <div className="flex items-center gap-2">
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  <span>
+                                    {new Date(payment.paymentDate).toLocaleDateString("ru-RU", {
+                                      day: "numeric",
+                                      month: "long",
+                                      year: "numeric"
+                                    })}
+                                  </span>
+                                </div>
+
+                                {payment.notes && (
+                                  <div className="bg-muted/30 p-2 rounded-lg text-xs sm:text-sm text-foreground/80 break-words border border-border/50">
+                                    {payment.notes}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Кнопки файлов (Квитанции) */}
+                              {payment.receiptFile && (
+                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 text-xs bg-background"
+                                    onClick={() => viewReceipt(payment)}
+                                  >
+                                    <Eye className="w-3 h-3 mr-1.5" />
+                                    Просмотр
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 text-xs bg-background"
+                                    onClick={() => downloadReceipt(payment)}
+                                  >
+                                    <Download className="w-3 h-3 mr-1.5" />
+                                    Скачать
+                                  </Button>
+                                  {payment.receiptFileName && (
+                                    <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">
+                                      {payment.receiptFileName}
+                                    </span>
+                                  )}
+                                </div>
                               )}
-                              <Badge variant={
-                                payment.status === "paid" ? "default" :
-                                  payment.status === "pending" ? "secondary" :
-                                    payment.status === "overdue" ? "destructive" : "outline"
-                              }>
-                                {payment.status === "paid" ? "Оплачено" :
-                                  payment.status === "pending" ? "Ожидает" :
-                                    payment.status === "overdue" ? "Просрочено" : "Отменено"}
-                              </Badge>
                             </div>
-                            <p className="text-sm text-muted-foreground mb-2">
-                              {new Date(payment.paymentDate).toLocaleDateString("ru-RU", {
-                                day: "numeric",
-                                month: "long",
-                                year: "numeric"
-                              })}
-                            </p>
-                            {payment.notes && (
-                              <p className="text-sm text-muted-foreground mb-2 break-words">
-                                {payment.notes}
-                              </p>
-                            )}
-                            {payment.receiptFile && (
-                              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => viewReceipt(payment)}
-                                >
-                                  <Eye className="w-3 h-3 mr-1" />
-                                  Просмотр
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => downloadReceipt(payment)}
-                                >
-                                  <Download className="w-3 h-3 mr-1" />
-                                  Скачать
-                                </Button>
-                                <span className="text-xs text-muted-foreground truncate max-w-[150px]">
-                                  {payment.receiptFileName}
+
+                            {/* ПРАВАЯ ЧАСТЬ: Сумма и Действия */}
+                            <div className="mt-2 md:mt-0 flex md:flex-col items-center md:items-end justify-between md:justify-start gap-4 border-t md:border-t-0 pt-3 md:pt-0">
+
+                              {/* Сумма */}
+                              <div className="text-left md:text-right">
+                                <span className="block text-xl sm:text-2xl font-bold tracking-tight text-primary">
+                                  {payment.amount.toLocaleString("ru-RU")} ₸
+                                </span>
+                                <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider hidden md:block">
+                                  Сумма
                                 </span>
                               </div>
-                            )}
-                          </div>
 
-                          {/* Адаптивный блок с ценой и кнопкой удаления */}
-                          <div className="flex items-center justify-between w-full sm:w-auto sm:justify-end gap-4 mt-4 sm:mt-0 sm:ml-4 border-t sm:border-t-0 pt-3 sm:pt-0">
-                            <span className="text-xl font-bold whitespace-nowrap">
-                              {payment.amount.toLocaleString("ru-RU")} ₸
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => deletePayment(payment._id)}
-                              className="text-muted-foreground hover:text-destructive"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                              {/* Кнопка удаления */}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => deletePayment(payment._id)}
+                                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors h-9 w-9"
+                                title="Удалить платеж"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+
                           </div>
                         </div>
                       );
