@@ -11,6 +11,7 @@ import {
   Zap,
   TrendingUp,
   PiggyBank,
+  HandCoins,
 } from "lucide-react";
 import { useAppContext, useAppActions } from "../contexts/AppContext";
 import {
@@ -83,6 +84,11 @@ const managementItems = [
     title: "Депозиты",
     url: "#deposits",
     icon: PiggyBank,
+  },
+  {
+    title: "Долги",
+    url: "#debts",
+    icon: HandCoins,
   },
 ];
 

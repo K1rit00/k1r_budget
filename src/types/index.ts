@@ -273,6 +273,27 @@ export interface ApiResponse<T = any> {
   errors?: FormError[];
 }
 
+// Типы для долгов
+export interface Debt {
+  id: string;
+  type: "owe" | "owed"; // "owe" - я должен, "owed" - мне должны
+  person: string; // Имя должника или кредитора
+  amount: number; // Изначальная сумма долга
+  currentBalance: number; // Текущий остаток долга
+  description?: string;
+  createdDate: string;
+  dueDate?: string; // Дата возврата (опционально)
+  status: "active" | "paid";
+}
+
+export interface DebtPayment {
+  id: string;
+  debtId: string;
+  amount: number;
+  paymentDate: string;
+  description?: string;
+}
+
 // Тип для компонентов форм
 export interface FormProps<T = any> {
   initialData?: T;

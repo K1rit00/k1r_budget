@@ -27,6 +27,7 @@ const ROUTES = {
   UTILITIES: "utilities",
   MONTHLY: "monthly",
   DEPOSITS: "deposits",
+  DEBTS: "debts",
 } as const;
 
 const PAGE_TITLES = {
@@ -41,6 +42,7 @@ const PAGE_TITLES = {
   [ROUTES.UTILITIES]: "Коммунальные платежи",
   [ROUTES.MONTHLY]: "Ежемесячные траты",
   [ROUTES.DEPOSITS]: "Депозиты",
+  [ROUTES.DEBTS]: "Долги",
 } as const;
 
 const PAGE_DESCRIPTIONS = {
@@ -55,6 +57,7 @@ const PAGE_DESCRIPTIONS = {
   [ROUTES.UTILITIES]: "Учет показаний счетчиков и коммунальных платежей",
   [ROUTES.MONTHLY]: "Планирование и контроль ежемесячных трат",
   [ROUTES.DEPOSITS]: "Управление депозитами, накопления и расходные портфели",
+  [ROUTES.DEBTS]: "Учёт долгов и их погашение",
 } as const;
 
 // Lazy loading компонентов
@@ -69,6 +72,7 @@ const Rent = lazy(() => import("./components/Rent"));
 const Utilities = lazy(() => import("./components/Utilities"));
 const MonthlyExpenses = lazy(() => import("./components/MonthlyExpenses"));
 const Deposits = lazy(() => import("./components/Deposits"));
+const Debts = lazy(() => import("./components/Debts"));
 
 function AppContent() {
   const { state } = useAppContext();
@@ -306,6 +310,7 @@ function AppContent() {
         case 'utilities': return <Utilities />;
         case 'monthly': return <MonthlyExpenses />;
         case 'deposits': return <Deposits />;
+        case 'debts': return <Debts />;
         default: return <Dashboard />;
       }
     };

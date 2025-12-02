@@ -794,6 +794,71 @@ export const apiService = {
     const response = await api.delete(`/reminders/${id}`);
     return response.data;
   },
+
+  // Debts
+  getDebts: async (params?: { type?: 'owe' | 'owed'; status?: 'active' | 'paid' }) => {
+    const response = await api.get('/debts', { params });
+    return response.data;
+  },
+
+  getDebt: async (id: string) => {
+    const response = await api.get(`/debts/${id}`);
+    return response.data;
+  },
+
+  createDebt: async (data: {
+    type: 'owe' | 'owed';
+    person: string;
+    amount: number;
+    description?: string;
+    dueDate?: string;
+  }) => {
+    const response = await api.post('/debts', data);
+    return response.data;
+  },
+
+  updateDebt: async (id: string, data: {
+    type?: 'owe' | 'owed';
+    person?: string;
+    amount?: number;
+    currentBalance?: number;
+    description?: string;
+    dueDate?: string;
+    status?: 'active' | 'paid';
+  }) => {
+    const response = await api.put(`/debts/${id}`, data);
+    return response.data;
+  },
+
+  deleteDebt: async (id: string) => {
+    const response = await api.delete(`/debts/${id}`);
+    return response.data;
+  },
+
+  // Debt Payments
+  addDebtPayment: async (debtId: string, data: {
+    amount: number;
+    description?: string;
+    paymentDate?: string;
+  }) => {
+    const response = await api.post(`/debts/${debtId}/payments`, data);
+    return response.data;
+  },
+
+  getDebtPayments: async (debtId: string) => {
+    const response = await api.get(`/debts/${debtId}/payments`);
+    return response.data;
+  },
+
+  deleteDebtPayment: async (debtId: string, paymentId: string) => {
+    const response = await api.delete(`/debts/${debtId}/payments/${paymentId}`);
+    return response.data;
+  },
+
+  getDebtStatistics: async () => {
+    const response = await api.get('/debts/statistics');
+    return response.data;
+  },
 };
 
 export default api;
